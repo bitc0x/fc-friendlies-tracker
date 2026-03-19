@@ -600,12 +600,14 @@ function FCTracker({ isAdmin }) {
           <div style={s.logo}>FC</div>
           <div>
             <h1 style={s.title}>FRIENDLIES TRACKER {isAdmin && <span style={s.adminBadge}>ADMIN</span>}</h1>
-            <p style={s.subtitle}>{players.length} Players | {matches.length} Matches</p>
+            <p style={s.subtitle}>
+              {players.length} Players | {matches.length} Matches
+              {tournament && <span style={s.tournamentTag}>{tournament.type === 'league' ? 'LEAGUE' : 'GROUPS+KO'}</span>}
+            </p>
           </div>
         </div>
         <div style={s.headerBtns}>
           <button onClick={() => setShowAddPlayer(true)} style={s.btnSec}>+ Player</button>
-          <button onClick={() => setShowOCR(true)} style={s.btnPri}>Scan</button>
           <button onClick={() => setShowAddMatch(true)} style={s.btnAcc}>+ Match</button>
           <button onClick={() => { if(confirm('Logout?')) { localStorage_.set('fct-auth', false); localStorage_.set('fct-admin', false); window.location.reload(); }}} style={s.btnLogout} title="Logout">X</button>
         </div>
@@ -807,7 +809,7 @@ function FCTracker({ isAdmin }) {
                         return (
                           <div key={fi} style={{...s.fixture, ...(isNext ? s.fixtureNext : {}), ...(played ? s.fixturePlayed : {})}}>
                             <span style={{...s.fixLeg, ...(isNext ? s.fixLegNext : {})}}>{isNext ? 'NEXT' : `L${fix.leg || 1}`}</span>
-                            <span style={s.fixPlayer}>{getPlayerName(fix.home)}</span>
+                            <span style={s.fixPlayer}><span style={s.hostBadge}>H</span>{getPlayerName(fix.home)}</span>
                             {played ? (
                               <span style={s.fixScore}>{played.score1} - {played.score2}</span>
                             ) : (
@@ -957,7 +959,7 @@ function FCTracker({ isAdmin }) {
                               return (
                                 <div key={fi} style={{...s.fixture, ...(isNext ? s.fixtureNext : {}), ...(played ? s.fixturePlayed : {})}}>
                                   <span style={{...s.fixLeg, ...(isNext ? s.fixLegNext : {})}}>{isNext ? 'NEXT' : `L${fix.leg || 1}`}</span>
-                                  <span style={s.fixPlayer}>{getPlayerName(fix.home)}</span>
+                                  <span style={s.fixPlayer}><span style={s.hostBadge}>H</span>{getPlayerName(fix.home)}</span>
                                   {played ? (
                                     <span style={s.fixScore}>{played.score1} - {played.score2}</span>
                                   ) : (
@@ -1366,6 +1368,7 @@ const s = {
   eloOverride: { fontSize: '0.5rem', color: '#fbbf24', background: 'rgba(251,191,36,0.15)', padding: '0.1rem 0.3rem', borderRadius: '3px', marginLeft: '0.4rem', fontWeight: '700' },
   eloEditorCurrent: { textAlign: 'center', fontSize: '0.8rem', color: '#888', marginBottom: '0.75rem' },
   adminBadge: { fontSize: '0.5rem', background: 'linear-gradient(135deg, #fbbf24, #f59e0b)', color: '#000', padding: '0.2rem 0.5rem', borderRadius: '4px', marginLeft: '0.5rem', fontWeight: '800', verticalAlign: 'middle' },
+  tournamentTag: { fontSize: '0.6rem', background: 'rgba(99,102,241,0.2)', color: '#a5b4fc', padding: '0.15rem 0.4rem', borderRadius: '4px', marginLeft: '0.5rem', fontWeight: '700' },
   matchCardLatest: { border: '1px solid rgba(251,191,36,0.2)', background: 'rgba(251,191,36,0.03)' },
   drawWarning: { textAlign: 'center', color: '#fbbf24', fontSize: '0.7rem', marginBottom: '0.5rem', padding: '0.4rem', background: 'rgba(251,191,36,0.08)', borderRadius: '4px' },
   nav: { display: 'flex', gap: '0.2rem', padding: '0.6rem 1.5rem', borderBottom: '1px solid rgba(255,255,255,0.04)', overflowX: 'auto' },
@@ -1450,6 +1453,7 @@ const s = {
   fixtureNext: { background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.3)' },
   fixturePlayed: { opacity: 0.6 },
   fixPlayer: { color: '#ccc', flex: 1 },
+  hostBadge: { fontSize: '0.45rem', background: 'rgba(251,191,36,0.2)', color: '#fbbf24', padding: '0.1rem 0.25rem', borderRadius: '3px', marginRight: '0.35rem', fontWeight: '700' },
   fixLeg: { color: '#6366f1', fontSize: '0.5rem', fontWeight: '700', minWidth: '28px' },
   fixLegNext: { color: '#fbbf24', fontSize: '0.45rem' },
   fixVs: { color: '#555', padding: '0 0.5rem' },
