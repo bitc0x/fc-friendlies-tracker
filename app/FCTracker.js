@@ -135,7 +135,7 @@ function FCTracker() {
   };
 
   // Match CRUD
-  const addMatch = (p1, p2, s1, s2, knockoutRound = null, knockoutMatchIdx = null) => {
+  const addMatch = (p1, p2, s1, s2, knockoutRound = null, knockoutMatchIdx = null, knockoutLeg = null) => {
     if (!p1 || !p2 || p1 === p2) return;
     const newMatch = {
       id: Date.now().toString(), player1: p1, player2: p2,
@@ -143,19 +143,57 @@ function FCTracker() {
       date: new Date().toISOString(),
       seasonId: currentSeason?.id || null, tournamentId: tournament?.id || null,
       team1: tournament?.teamSelections?.[p1] || null, team2: tournament?.teamSelections?.[p2] || null,
-      knockoutRound, knockoutMatchIdx
+      knockoutRound, knockoutMatchIdx, knockoutLeg
     };
     const newMatches = [...matches, newMatch];
     save('fct-matches', newMatches, setMatches);
     
-    // Auto-advance knockout bracket
-    if (tournament && knockoutRound !== null && knockoutMatchIdx !== null) {
-      const winner = newMatch.score1 > newMatch.score2 ? p1 : newMatch.score2 > newMatch.score1 ? p2 : null;
-      if (winner) {
-        const updatedTournament = JSON.parse(JSON.stringify(tournament));
-        if (!updatedTournament.knockoutResults) updatedTournament.knockoutResults = {};
-        if (!updatedTournament.knockoutResults[knockoutRound]) updatedTournament.knockoutResults[knockoutRound] = {};
-        updatedTournament.knockoutResults[knockoutRound][knockoutMatchIdx] = { winner, score: `${newMatch.score1}-${newMatch.score2}` };
+    // Handle two-leg knockout system
+    if (tournament && knockoutRound !== null && knockoutMatchIdx !== null && knockoutLeg !== null) {
+      const updatedTournament = JSON.parse(JSON.stringify(tournament));
+      if (!updatedTournament.knockoutResults) updatedTournament.knockoutResults = {};
+      if (!updatedTournament.knockoutResults[knockoutRound]) updatedTournament.knockoutResults[knockoutRound] = {};
+      if (!updatedTournament.knockoutResults[knockoutRound][knockoutMatchIdx]) {
+        updatedTournament.knockoutResults[knockoutRound][knockoutMatchIdx] = {};
+      }
+      
+      const matchResult = updatedTournament.knockoutResults[knockoutRound][knockoutMatchIdx];
+      
+      // Store this leg's result
+      if (knockoutLeg === 1) {
+        matchResult.leg1 = { p1Goals: newMatch.score1, p2Goals: newMatch.score2 };
+      } else {
+        matchResult.leg2 = { p1Goals: newMatch.score1, p2Goals: newMatch.score2 };
+      }
+      
+      // Check if both legs are complete
+      if (matchResult.leg1 && matchResult.leg2) {
+        // Calculate aggregate (p1 is always the "home" player in leg 1)
+        const p1Agg = matchResult.leg1.p1Goals + matchResult.leg2.p1Goals;
+        const p2Agg = matchResult.leg1.p2Goals + matchResult.leg2.p2Goals;
+        
+        // Determine winner by aggregate
+        let winner = null;
+        if (p1Agg > p2Agg) {
+          winner = p1;
+        } else if (p2Agg > p1Agg) {
+          winner = p2;
+        } else {
+          // Aggregate tied - use away goals (p1 scored in leg2, p2 scored in leg1)
+          const p1Away = matchResult.leg2.p1Goals;
+          const p2Away = matchResult.leg1.p2Goals;
+          if (p1Away > p2Away) {
+            winner = p1;
+          } else if (p2Away > p1Away) {
+            winner = p2;
+          } else {
+            // Still tied - higher seed (p1) advances
+            winner = p1;
+          }
+        }
+        
+        matchResult.winner = winner;
+        matchResult.aggregate = `${p1Agg}-${p2Agg}`;
         
         // Advance winner to next round
         const nextRound = knockoutRound + 1;
@@ -172,9 +210,9 @@ function FCTracker() {
         if (updatedTournament.knockoutBracket[nextRound]) {
           updatedTournament.knockoutBracket[nextRound][nextMatchIdx * 2 + (isFirstOfPair ? 0 : 1)] = winner;
         }
-        
-        save('fct-tournament', updatedTournament, setTournament);
       }
+      
+      save('fct-tournament', updatedTournament, setTournament);
     }
     
     setMatchData({ player1: '', player2: '', score1: 0, score2: 0 });
@@ -237,19 +275,31 @@ function FCTracker() {
     });
   };
 
-  // Group stage fixtures generator
+  // Group stage fixtures generator (two legs: home & away)
   const generateGroupFixtures = (groupPlayers) => {
     const fixtures = [];
+    // First leg (home)
     for (let i = 0; i < groupPlayers.length; i++) {
       for (let j = i + 1; j < groupPlayers.length; j++) {
-        fixtures.push({ home: groupPlayers[i], away: groupPlayers[j] });
+        fixtures.push({ home: groupPlayers[i], away: groupPlayers[j], leg: 1 });
       }
     }
-    for (let i = fixtures.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [fixtures[i], fixtures[j]] = [fixtures[j], fixtures[i]];
+    // Second leg (reverse, away becomes home)
+    for (let i = 0; i < groupPlayers.length; i++) {
+      for (let j = i + 1; j < groupPlayers.length; j++) {
+        fixtures.push({ home: groupPlayers[j], away: groupPlayers[i], leg: 2 });
+      }
     }
-    return fixtures;
+    // Shuffle within each leg group for variety
+    const leg1 = fixtures.filter(f => f.leg === 1);
+    const leg2 = fixtures.filter(f => f.leg === 2);
+    [leg1, leg2].forEach(arr => {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+    });
+    return [...leg1, ...leg2];
   };
 
   // Tournament draw
@@ -586,16 +636,17 @@ function FCTracker() {
                             ))}
                           </tbody>
                         </table>
-                        <div style={s.fixturesTitle}>Fixtures</div>
+                        <div style={s.fixturesTitle}>Fixtures (Home & Away)</div>
                         <div style={s.fixtures}>
                           {tournament.groupFixtures?.[gi]?.map((fix, fi) => {
                             const played = matches.find(m => m.tournamentId === tournament.id && 
-                              ((m.player1 === fix.home && m.player2 === fix.away) || (m.player1 === fix.away && m.player2 === fix.home)));
+                              m.player1 === fix.home && m.player2 === fix.away);
                             return (
                               <div key={fi} style={s.fixture}>
+                                <span style={s.fixLeg}>L{fix.leg || 1}</span>
                                 <span style={s.fixPlayer}>{getPlayerName(fix.home)}</span>
                                 {played ? (
-                                  <span style={s.fixScore}>{played.player1 === fix.home ? played.score1 : played.score2} - {played.player1 === fix.home ? played.score2 : played.score1}</span>
+                                  <span style={s.fixScore}>{played.score1} - {played.score2}</span>
                                 ) : (
                                   <span style={s.fixVs}>vs</span>
                                 )}
@@ -626,16 +677,42 @@ function FCTracker() {
                         <h4 style={s.roundTitle}>{roundPlayers.length === 2 ? 'FINAL' : roundPlayers.length === 4 ? 'SEMI-FINALS' : roundPlayers.length === 8 ? 'QUARTER-FINALS' : `ROUND ${round + 1}`}</h4>
                         {matchups.map((m, mi) => {
                           const result = tournament.knockoutResults?.[round]?.[m.matchIdx];
+                          const leg1Done = !!result?.leg1;
+                          const leg2Done = !!result?.leg2;
+                          const bothDone = leg1Done && leg2Done;
                           return (
-                            <div key={mi} style={s.bracketMatch} onClick={() => !result && m.p1 && m.p2 && setShowKnockoutMatch({ round, matchIdx: m.matchIdx, p1: m.p1, p2: m.p2 })}>
+                            <div key={mi} style={s.bracketMatch}>
                               <div style={{...s.bracketPlayer, ...(result?.winner === m.p1 ? s.bracketWinner : {}), ...(!m.p1 ? s.bracketTBD : {})}}>
                                 <span>{m.p1 ? getPlayerName(m.p1) : 'TBD'}</span>
                                 {tournament.teamSelections?.[m.p1] && <span style={s.bracketTeam}>{tournament.teamSelections[m.p1]}</span>}
                               </div>
-                              {result ? (
-                                <div style={s.bracketResult}>{result.score}</div>
+                              {bothDone ? (
+                                <div style={s.bracketResultTwoLeg}>
+                                  <div style={s.legScores}>
+                                    <span style={s.legScore}>L1: {result.leg1.p1Goals}-{result.leg1.p2Goals}</span>
+                                    <span style={s.legScore}>L2: {result.leg2.p1Goals}-{result.leg2.p2Goals}</span>
+                                  </div>
+                                  <div style={s.aggScore}>AGG: {result.aggregate}</div>
+                                </div>
+                              ) : m.p1 && m.p2 ? (
+                                <div style={s.legButtons}>
+                                  <button 
+                                    onClick={() => setShowKnockoutMatch({ round, matchIdx: m.matchIdx, p1: m.p1, p2: m.p2, leg: 1 })} 
+                                    style={{...s.legBtn, ...(leg1Done ? s.legBtnDone : {})}}
+                                    disabled={leg1Done}
+                                  >
+                                    {leg1Done ? `L1: ${result.leg1.p1Goals}-${result.leg1.p2Goals}` : 'Leg 1'}
+                                  </button>
+                                  <button 
+                                    onClick={() => setShowKnockoutMatch({ round, matchIdx: m.matchIdx, p1: m.p2, p2: m.p1, leg: 2, originalP1: m.p1, originalP2: m.p2 })} 
+                                    style={{...s.legBtn, ...(leg2Done ? s.legBtnDone : {}), ...(!leg1Done ? s.legBtnDisabled : {})}}
+                                    disabled={!leg1Done || leg2Done}
+                                  >
+                                    {leg2Done ? `L2: ${result.leg2.p1Goals}-${result.leg2.p2Goals}` : 'Leg 2'}
+                                  </button>
+                                </div>
                               ) : (
-                                <div style={s.bracketVs}>{m.p1 && m.p2 ? 'Click to play' : 'vs'}</div>
+                                <div style={s.bracketVs}>vs</div>
                               )}
                               <div style={{...s.bracketPlayer, ...(result?.winner === m.p2 ? s.bracketWinner : {}), ...(!m.p2 ? s.bracketTBD : {})}}>
                                 <span>{m.p2 ? getPlayerName(m.p2) : 'TBD'}</span>
@@ -680,7 +757,8 @@ function FCTracker() {
         <div style={s.modalBtns}><button onClick={() => setShowAddMatch(false)} style={s.btnSec}>Cancel</button><button onClick={() => addMatch(matchData.player1, matchData.player2, matchData.score1, matchData.score2)} style={s.btnAcc}>Log</button></div>
       </Modal>}
 
-      {showKnockoutMatch && <Modal onClose={() => setShowKnockoutMatch(null)} title="KNOCKOUT MATCH">
+      {showKnockoutMatch && <Modal onClose={() => setShowKnockoutMatch(null)} title={`KNOCKOUT MATCH - LEG ${showKnockoutMatch.leg}`}>
+        <p style={s.legInfo}>{showKnockoutMatch.leg === 1 ? `${getPlayerName(showKnockoutMatch.p1)} hosts` : `${getPlayerName(showKnockoutMatch.p1)} hosts (return leg)`}</p>
         <div style={s.knockoutMatchup}>
           <span style={s.knockoutPlayer}>{getPlayerName(showKnockoutMatch.p1)}</span>
           <span style={s.knockoutVs}>VS</span>
@@ -691,10 +769,17 @@ function FCTracker() {
           <span style={s.vs}>-</span>
           <input type="number" min="0" max="99" value={matchData.score2} onChange={e => setMatchData({...matchData, score2: e.target.value})} style={s.scoreInput} />
         </div>
-        {String(matchData.score1) === String(matchData.score2) && <p style={s.drawWarning}>No draws in knockout rounds</p>}
         <div style={s.modalBtns}>
           <button onClick={() => setShowKnockoutMatch(null)} style={s.btnSec}>Cancel</button>
-          <button onClick={() => addMatch(showKnockoutMatch.p1, showKnockoutMatch.p2, matchData.score1, matchData.score2, showKnockoutMatch.round, showKnockoutMatch.matchIdx)} disabled={String(matchData.score1) === String(matchData.score2)} style={{...s.btnAcc, ...(String(matchData.score1) === String(matchData.score2) ? {opacity: 0.5, cursor: 'not-allowed'} : {})}}>Submit Result</button>
+          <button onClick={() => {
+            const leg = showKnockoutMatch.leg;
+            const origP1 = showKnockoutMatch.originalP1 || showKnockoutMatch.p1;
+            const origP2 = showKnockoutMatch.originalP2 || showKnockoutMatch.p2;
+            // For leg 2, scores are entered as host (orig p2) vs visitor (orig p1), so swap for storage
+            const s1 = leg === 2 ? matchData.score2 : matchData.score1;
+            const s2 = leg === 2 ? matchData.score1 : matchData.score2;
+            addMatch(origP1, origP2, s1, s2, showKnockoutMatch.round, showKnockoutMatch.matchIdx, leg);
+          }} style={s.btnAcc}>Submit Result</button>
         </div>
       </Modal>}
 
@@ -931,6 +1016,7 @@ const s = {
   fixtures: { display: 'flex', flexDirection: 'column', gap: '0.3rem' },
   fixture: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.3rem 0.5rem', background: 'rgba(0,0,0,0.2)', borderRadius: '4px', fontSize: '0.65rem' },
   fixPlayer: { color: '#ccc', flex: 1 },
+  fixLeg: { color: '#6366f1', fontSize: '0.5rem', fontWeight: '700', minWidth: '20px' },
   fixVs: { color: '#555', padding: '0 0.5rem' },
   fixScore: { color: '#4ade80', fontWeight: '700', padding: '0 0.5rem' },
   bracketContainer: { marginTop: '0.5rem' },
@@ -944,6 +1030,15 @@ const s = {
   bracketTeam: { fontSize: '0.55rem', color: '#888' },
   bracketVs: { textAlign: 'center', fontSize: '0.55rem', color: '#555', padding: '0.2rem 0' },
   bracketResult: { textAlign: 'center', fontSize: '0.8rem', fontWeight: '700', color: '#fff', padding: '0.2rem 0' },
+  bracketResultTwoLeg: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem', padding: '0.3rem 0' },
+  legScores: { display: 'flex', gap: '0.5rem', fontSize: '0.6rem', color: '#888' },
+  legScore: { background: 'rgba(255,255,255,0.05)', padding: '0.15rem 0.4rem', borderRadius: '3px' },
+  aggScore: { fontSize: '0.75rem', fontWeight: '700', color: '#4ade80' },
+  legButtons: { display: 'flex', flexDirection: 'column', gap: '0.3rem', padding: '0.2rem 0' },
+  legBtn: { padding: '0.3rem 0.6rem', background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: '4px', color: '#a5b4fc', fontSize: '0.65rem', cursor: 'pointer', fontWeight: '600' },
+  legBtnDone: { background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.2)', color: '#4ade80', cursor: 'default' },
+  legBtnDisabled: { opacity: 0.4, cursor: 'not-allowed' },
+  legInfo: { textAlign: 'center', fontSize: '0.7rem', color: '#fbbf24', marginBottom: '0.5rem', fontWeight: '600' },
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' },
   modal: { background: 'linear-gradient(145deg, #18182a, #12121a)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px', padding: '1.5rem', maxWidth: '400px', width: '100%', maxHeight: '90vh', overflowY: 'auto' },
   modalWide: { maxWidth: '550px' },
