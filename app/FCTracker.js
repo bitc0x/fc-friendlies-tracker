@@ -1,6 +1,23 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getDatabase, ref, set, onValue } from 'firebase/database';
+
+// ============ FIREBASE CONFIG ============
+const firebaseConfig = {
+  apiKey: "AIzaSyA4y7aGvFKQWxJUpHjJBTUzOwIWJd7YOTs",
+  authDomain: "fc-friendlies-tracker.firebaseapp.com",
+  databaseURL: "https://fc-friendlies-tracker-default-rtdb.firebaseio.com",
+  projectId: "fc-friendlies-tracker",
+  storageBucket: "fc-friendlies-tracker.firebasestorage.app",
+  messagingSenderId: "480194965245",
+  appId: "1:480194965245:web:830ac0ee13cc95422bd894"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
 
 // ============ FC 26 TEAMS DATABASE ============
 const FC26_TEAMS = {
@@ -41,8 +58,8 @@ const ALL_TEAMS = Object.entries(FC26_TEAMS).flatMap(([league, data]) =>
   data.teams.map(team => ({ name: team, league, country: data.country }))
 );
 
-// ============ STORAGE HELPER ============
-const storage = {
+// ============ LOCAL STORAGE (for auth only) ============
+const localStorage_ = {
   get: (key) => {
     if (typeof window === 'undefined') return null;
     try {
@@ -55,6 +72,9 @@ const storage = {
     try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
   }
 };
+
+// ============ FIREBASE HELPERS ============
+const dbSet = (path, data) => set(ref(db, path), data);
 
 // ============ MAIN COMPONENT ============
 function FCTracker() {
@@ -96,18 +116,38 @@ function FCTracker() {
   const ELO_K = 32;
   const ELO_START = 1200;
 
-  // Load data on mount
+  // Load data from Firebase with realtime sync
   useEffect(() => {
-    setPlayers(storage.get('fct-players') || []);
-    setMatches(storage.get('fct-matches') || []);
-    setTournament(storage.get('fct-tournament'));
-    setSeasons(storage.get('fct-seasons') || []);
-    setCurrentSeason(storage.get('fct-current-season'));
-    setTwitchChannel(storage.get('fct-twitch') || '');
+    // Set up realtime listeners
+    const unsubPlayers = onValue(ref(db, 'players'), (snapshot) => {
+      setPlayers(snapshot.val() || []);
+    });
+    
+    const unsubMatches = onValue(ref(db, 'matches'), (snapshot) => {
+      setMatches(snapshot.val() || []);
+    });
+    
+    const unsubTournament = onValue(ref(db, 'tournament'), (snapshot) => {
+      setTournament(snapshot.val() || null);
+    });
+    
+    // Local storage for non-shared data
+    setTwitchChannel(localStorage_.get('fct-twitch') || '');
     setLoading(false);
+    
+    // Cleanup listeners on unmount
+    return () => {
+      unsubPlayers();
+      unsubMatches();
+      unsubTournament();
+    };
   }, []);
 
-  const save = (key, data, setter) => { setter(data); storage.set(key, data); };
+  // Save to Firebase
+  const saveToDb = (path, data, setter) => {
+    setter(data);
+    dbSet(path, data);
+  };
 
   // ELO (memoized for performance)
   const eloRatings = useMemo(() => {
@@ -128,7 +168,7 @@ function FCTracker() {
   const addPlayer = () => {
     if (!newPlayerName.trim()) return;
     const newPlayer = { id: Date.now().toString(), name: newPlayerName.trim(), psn: newPlayerPSN.trim() || null, created: new Date().toISOString() };
-    save('fct-players', [...players, newPlayer], setPlayers);
+    saveToDb('players', [...players, newPlayer], setPlayers);
     setNewPlayerName(''); setNewPlayerPSN(''); setShowAddPlayer(false);
   };
 
@@ -144,7 +184,7 @@ function FCTracker() {
       knockoutRound, knockoutMatchIdx, knockoutLeg
     };
     const newMatches = [...matches, newMatch];
-    save('fct-matches', newMatches, setMatches);
+    saveToDb('matches', newMatches, setMatches);
     
     // Handle two-leg knockout system
     if (tournament && knockoutRound !== null && knockoutMatchIdx !== null && knockoutLeg !== null) {
@@ -210,7 +250,7 @@ function FCTracker() {
         }
       }
       
-      save('fct-tournament', updatedTournament, setTournament);
+      saveToDb('tournament', updatedTournament, setTournament);
     }
     
     setMatchData({ player1: '', player2: '', score1: 0, score2: 0 });
@@ -229,7 +269,7 @@ function FCTracker() {
     if (!confirm(`Delete: ${p1Name} ${lastMatch.score1}-${lastMatch.score2} ${p2Name}${legInfo}?`)) return;
     
     const newMatches = matches.slice(0, -1);
-    save('fct-matches', newMatches, setMatches);
+    saveToDb('matches', newMatches, setMatches);
     
     // If it was a knockout match, also update tournament results
     if (tournament && lastMatch.knockoutRound !== null && lastMatch.knockoutLeg !== null) {
@@ -260,7 +300,7 @@ function FCTracker() {
           delete updatedTournament.knockoutResults[lastMatch.knockoutRound][lastMatch.knockoutMatchIdx];
         }
         
-        save('fct-tournament', updatedTournament, setTournament);
+        saveToDb('tournament', updatedTournament, setTournament);
       }
     }
   };
@@ -270,7 +310,7 @@ function FCTracker() {
     const player = players.find(p => p.id === playerId);
     if (!confirm(`Remove ${player?.name}? Their match history will remain.`)) return;
     const newPlayers = players.filter(p => p.id !== playerId);
-    save('fct-players', newPlayers, setPlayers);
+    saveToDb('players', newPlayers, setPlayers);
   };
 
   // Standings calculation
@@ -411,7 +451,7 @@ function FCTracker() {
 
     setDrawAnimation({ phase: 'complete' });
     await new Promise(r => setTimeout(r, 500));
-    save('fct-tournament', tournamentData, setTournament);
+    saveToDb('tournament', tournamentData, setTournament);
     setShowDraw(false); setShowTournamentSetup(false); setShowTeamSelect(false);
     setDrawAnimation(null); setDrawnOrder([]);
   };
@@ -463,7 +503,7 @@ function FCTracker() {
   const captureTwitch = async () => {
     if (!twitchChannel.trim()) return;
     setOcrProcessing(true);
-    save('fct-twitch', twitchChannel.trim(), setTwitchChannel);
+    localStorage_.set('fct-twitch', twitchChannel.trim());
     try {
       const url = `https://static-cdn.jtvnw.net/previews-ttv/live_user_${twitchChannel.toLowerCase().replace(/[^a-z0-9_]/g, '')}-1920x1080.jpg?t=${Date.now()}`;
       const res = await fetch(url);
@@ -497,7 +537,7 @@ function FCTracker() {
           <button onClick={() => setShowAddPlayer(true)} style={s.btnSec}>+ Player</button>
           <button onClick={() => setShowOCR(true)} style={s.btnPri}>Scan</button>
           <button onClick={() => setShowAddMatch(true)} style={s.btnAcc}>+ Match</button>
-          <button onClick={() => { if(confirm('Logout?')) { storage.set('fct-auth', false); window.location.reload(); }}} style={s.btnLogout} title="Logout">X</button>
+          <button onClick={() => { if(confirm('Logout?')) { localStorage_.set('fct-auth', false); window.location.reload(); }}} style={s.btnLogout} title="Logout">X</button>
         </div>
       </header>
 
@@ -651,7 +691,7 @@ function FCTracker() {
               {!tournament ? (
                 <button onClick={() => setShowTournamentSetup(true)} style={s.btnPri}>Create</button>
               ) : (
-                <button onClick={() => { if(confirm('End this tournament? This cannot be undone.')) save('fct-tournament', null, setTournament); }} style={s.btnDanger}>End</button>
+                <button onClick={() => { if(confirm('End this tournament? This cannot be undone.')) saveToDb('tournament', null, setTournament); }} style={s.btnDanger}>End</button>
               )}
             </div>
 
@@ -739,7 +779,7 @@ function FCTracker() {
                             knockoutBracket: { 0: bracket },
                             knockoutResults: {}
                           };
-                          save('fct-tournament', updatedTournament, setTournament);
+                          saveToDb('tournament', updatedTournament, setTournament);
                         }}
                         style={{...s.btnPri, ...(allPlayed ? {} : { opacity: 0.5 })}}
                         disabled={!allPlayed}
@@ -1242,7 +1282,7 @@ function PasswordGate({ onSuccess }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (input.toLowerCase() === PASSWORD) {
-      storage.set('fct-auth', true);
+      localStorage_.set('fct-auth', true);
       onSuccess();
     } else {
       setError(true);
@@ -1280,7 +1320,7 @@ function AppWrapper() {
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    const auth = storage.get('fct-auth');
+    const auth = localStorage_.get('fct-auth');
     if (auth === true) {
       setAuthenticated(true);
     }
