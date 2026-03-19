@@ -57,7 +57,7 @@ const storage = {
 };
 
 // ============ MAIN COMPONENT ============
-export default function FCTracker() {
+function FCTracker() {
   const [view, setView] = useState('standings');
   const [players, setPlayers] = useState([]);
   const [matches, setMatches] = useState([]);
@@ -975,4 +975,83 @@ const s = {
   ocrDetected: { textAlign: 'center', padding: '0.75rem', background: 'rgba(74,222,128,0.08)', borderRadius: '6px', marginBottom: '0.75rem' },
   ocrScoreDisplay: { fontSize: '1rem', fontWeight: '700', color: '#4ade80' },
   ocrError: { textAlign: 'center', padding: '1rem', background: 'rgba(239,68,68,0.08)', borderRadius: '6px', color: '#fca5a5' },
+  // Password gate styles
+  pwContainer: { minHeight: '100vh', background: 'linear-gradient(145deg, #080810, #0f0f1a, #0a0a12)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' },
+  pwBox: { background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '16px', padding: '2.5rem', maxWidth: '360px', width: '100%', textAlign: 'center' },
+  pwLogo: { width: '64px', height: '64px', background: 'linear-gradient(135deg, #fbbf24, #f59e0b)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '900', fontSize: '1.5rem', color: '#000', margin: '0 auto 1.5rem' },
+  pwTitle: { fontSize: '1.4rem', fontWeight: '800', marginBottom: '0.5rem', background: 'linear-gradient(90deg, #fff, #a5b4fc)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' },
+  pwSubtitle: { fontSize: '0.75rem', color: '#666', marginBottom: '1.5rem' },
+  pwInput: { width: '100%', padding: '0.85rem 1rem', background: 'rgba(0,0,0,0.4)', border: '2px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff', fontSize: '1rem', textAlign: 'center', letterSpacing: '0.15em', marginBottom: '1rem', boxSizing: 'border-box' },
+  pwInputError: { borderColor: 'rgba(239,68,68,0.5)' },
+  pwBtn: { width: '100%', padding: '0.85rem', background: 'linear-gradient(135deg, #6366f1, #4f46e5)', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: '700', fontSize: '0.85rem', cursor: 'pointer', marginBottom: '0.75rem' },
+  pwError: { color: '#f87171', fontSize: '0.75rem', marginTop: '0.5rem' },
 };
+
+// ============ PASSWORD GATE ============
+const PASSWORD = 'piturca';
+
+function PasswordGate({ onSuccess }) {
+  const [input, setInput] = useState('');
+  const [error, setError] = useState(false);
+  const [shake, setShake] = useState(false);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (input.toLowerCase() === PASSWORD) {
+      storage.set('fct-auth', true);
+      onSuccess();
+    } else {
+      setError(true);
+      setShake(true);
+      setTimeout(() => setShake(false), 500);
+      setInput('');
+    }
+  };
+
+  return (
+    <div style={s.pwContainer}>
+      <form onSubmit={handleSubmit} style={{...s.pwBox, animation: shake ? 'shake 0.5s ease-in-out' : 'none'}}>
+        <div style={s.pwLogo}>FC</div>
+        <h1 style={s.pwTitle}>FRIENDLIES TRACKER</h1>
+        <p style={s.pwSubtitle}>Acceso restringido</p>
+        <input
+          type="password"
+          placeholder="Contrasena"
+          value={input}
+          onChange={(e) => { setInput(e.target.value); setError(false); }}
+          style={{...s.pwInput, ...(error ? s.pwInputError : {})}}
+          autoFocus
+        />
+        <button type="submit" style={s.pwBtn}>Entrar</button>
+        {error && <p style={s.pwError}>Contrasena incorrecta</p>}
+      </form>
+      <style>{`@keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}`}</style>
+    </div>
+  );
+}
+
+// ============ APP WRAPPER WITH AUTH ============
+function AppWrapper() {
+  const [authenticated, setAuthenticated] = useState(false);
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    const auth = storage.get('fct-auth');
+    if (auth === true) {
+      setAuthenticated(true);
+    }
+    setChecking(false);
+  }, []);
+
+  if (checking) {
+    return <div style={s.pwContainer}><div style={s.pwLogo}>FC</div></div>;
+  }
+
+  if (!authenticated) {
+    return <PasswordGate onSuccess={() => setAuthenticated(true)} />;
+  }
+
+  return <FCTracker />;
+}
+
+export default AppWrapper;
