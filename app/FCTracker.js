@@ -559,23 +559,25 @@ function FCTracker() {
         {view === 'elo' && (
           <div style={s.card}>
             <div style={s.cardHead}><h2 style={s.cardTitle}>ELO RATINGS</h2><span style={s.badge}>K={ELO_K}</span></div>
-            <div style={s.eloList}>
-              {eloRanking.map((p, i) => {
-                const elo = eloRatings[p.id] || ELO_START;
-                const diff = elo - ELO_START;
-                return (
-                  <div key={p.id} style={{...s.eloCard, ...(i === 0 ? s.eloGold : {})}}>
-                    <span style={{...s.pos, ...(i === 0 ? s.posGold : i < 3 ? s.posTop : {})}}>{i + 1}</span>
-                    <div style={s.eloInfo}><span style={s.eloName}>{p.name}</span></div>
-                    <div style={s.eloScore}>
-                      <span style={s.eloNum}>{elo}</span>
-                      <span style={{...s.eloDiff, color: diff > 0 ? '#4ade80' : diff < 0 ? '#f87171' : '#888'}}>{diff > 0 ? '+' : ''}{diff}</span>
+            {players.length === 0 ? <p style={s.empty}>Add players to start</p> : (
+              <div style={s.eloList}>
+                {eloRanking.map((p, i) => {
+                  const elo = eloRatings[p.id] || ELO_START;
+                  const diff = elo - ELO_START;
+                  return (
+                    <div key={p.id} style={{...s.eloCard, ...(i === 0 ? s.eloGold : {})}}>
+                      <span style={{...s.pos, ...(i === 0 ? s.posGold : i < 3 ? s.posTop : {})}}>{i + 1}</span>
+                      <div style={s.eloInfo}><span style={s.eloName}>{p.name}</span></div>
+                      <div style={s.eloScore}>
+                        <span style={s.eloNum}>{elo}</span>
+                        <span style={{...s.eloDiff, color: diff > 0 ? '#4ade80' : diff < 0 ? '#f87171' : '#888'}}>{diff > 0 ? '+' : ''}{diff}</span>
+                      </div>
+                      <button onClick={() => deletePlayer(p.id)} style={s.btnDelete} title="Remove player">x</button>
                     </div>
-                    <button onClick={() => deletePlayer(p.id)} style={s.btnDelete} title="Remove player">x</button>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -889,23 +891,29 @@ function FCTracker() {
       </Modal>}
 
       {showTournamentSetup && !showTeamSelect && !showDraw && <Modal onClose={() => setShowTournamentSetup(false)} title="CREATE TOURNAMENT">
-        <div style={s.typeOptions}>
-          <button onClick={() => setTournamentType('knockout')} style={{...s.typeBtn, ...(tournamentType === 'knockout' ? s.typeSel : {})}}>
-            <span style={s.typeTitle}>Knockout</span><span style={s.typeDesc}>Single elimination bracket</span>
-          </button>
-          <button onClick={() => setTournamentType('groups')} style={{...s.typeBtn, ...(tournamentType === 'groups' ? s.typeSel : {})}}>
-            <span style={s.typeTitle}>Groups + Knockout</span><span style={s.typeDesc}>Group stage then elimination</span>
-          </button>
-        </div>
-        {tournamentType === 'groups' && (
-          <div style={s.groupCountRow}>
-            <span>Number of groups:</span>
-            <select value={groupCount} onChange={e => setGroupCount(parseInt(e.target.value))} style={s.selectSmall}>
-              {[2, 3, 4].map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
-          </div>
+        {players.length < 2 ? (
+          <p style={s.empty}>Need at least 2 players to create a tournament</p>
+        ) : (
+          <>
+            <div style={s.typeOptions}>
+              <button onClick={() => setTournamentType('knockout')} style={{...s.typeBtn, ...(tournamentType === 'knockout' ? s.typeSel : {})}}>
+                <span style={s.typeTitle}>Knockout</span><span style={s.typeDesc}>Single elimination bracket</span>
+              </button>
+              <button onClick={() => setTournamentType('groups')} style={{...s.typeBtn, ...(tournamentType === 'groups' ? s.typeSel : {})}}>
+                <span style={s.typeTitle}>Groups + Knockout</span><span style={s.typeDesc}>Group stage then elimination</span>
+              </button>
+            </div>
+            {tournamentType === 'groups' && (
+              <div style={s.groupCountRow}>
+                <span>Number of groups:</span>
+                <select value={groupCount} onChange={e => setGroupCount(parseInt(e.target.value))} style={s.selectSmall}>
+                  {[2, 3, 4].filter(n => players.length >= n * 2).map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </div>
+            )}
+            <div style={s.modalBtns}><button onClick={() => setShowTournamentSetup(false)} style={s.btnSec}>Cancel</button><button onClick={() => setShowTeamSelect(true)} style={s.btnPri}>Select Teams</button></div>
+          </>
         )}
-        <div style={s.modalBtns}><button onClick={() => setShowTournamentSetup(false)} style={s.btnSec}>Cancel</button><button onClick={() => setShowTeamSelect(true)} style={s.btnPri}>Select Teams</button></div>
       </Modal>}
 
       {showTeamSelect && <Modal onClose={() => setShowTeamSelect(false)} title="SELECT TEAMS" wide>
