@@ -77,11 +77,12 @@ const localStorage_ = {
 const dbSet = (path, data) => set(ref(db, path), data);
 
 // ============ MAIN COMPONENT ============
-function FCTracker() {
+function FCTracker({ isAdmin }) {
   const [view, setView] = useState('standings');
   const [players, setPlayers] = useState([]);
   const [matches, setMatches] = useState([]);
   const [tournament, setTournament] = useState(null);
+  const [eloOverrides, setEloOverrides] = useState({});
   const [seasons, setSeasons] = useState([]);
   const [currentSeason, setCurrentSeason] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -94,6 +95,7 @@ function FCTracker() {
   const [showDraw, setShowDraw] = useState(false);
   const [showOCR, setShowOCR] = useState(false);
   const [showKnockoutMatch, setShowKnockoutMatch] = useState(null);
+  const [showEloEditor, setShowEloEditor] = useState(null);
   
   // Form states
   const [newPlayerName, setNewPlayerName] = useState('');
@@ -131,6 +133,10 @@ function FCTracker() {
       setTournament(snapshot.val() || null);
     });
     
+    const unsubEloOverrides = onValue(ref(db, 'eloOverrides'), (snapshot) => {
+      setEloOverrides(snapshot.val() || {});
+    });
+    
     // Local storage for non-shared data
     setTwitchChannel(localStorage_.get('fct-twitch') || '');
     setLoading(false);
@@ -140,6 +146,7 @@ function FCTracker() {
       unsubPlayers();
       unsubMatches();
       unsubTournament();
+      unsubEloOverrides();
     };
   }, []);
 
@@ -149,7 +156,7 @@ function FCTracker() {
     dbSet(path, data);
   };
 
-  // ELO (memoized for performance)
+  // ELO (memoized for performance, with admin overrides)
   const eloRatings = useMemo(() => {
     const ratings = {};
     players.forEach(p => { ratings[p.id] = ELO_START; });
@@ -161,8 +168,14 @@ function FCTracker() {
       ratings[m.player1] = Math.round(p1Elo + ELO_K * (outcome1 - expected1));
       ratings[m.player2] = Math.round(p2Elo + ELO_K * ((1 - outcome1) - (1 - expected1)));
     });
+    // Apply admin overrides
+    Object.entries(eloOverrides).forEach(([playerId, override]) => {
+      if (override !== null && override !== undefined) {
+        ratings[playerId] = override;
+      }
+    });
     return ratings;
-  }, [players, matches]);
+  }, [players, matches, eloOverrides]);
 
   // Player CRUD
   const addPlayer = () => {
@@ -529,7 +542,7 @@ function FCTracker() {
         <div style={s.logoArea}>
           <div style={s.logo}>FC</div>
           <div>
-            <h1 style={s.title}>FRIENDLIES TRACKER</h1>
+            <h1 style={s.title}>FRIENDLIES TRACKER {isAdmin && <span style={s.adminBadge}>ADMIN</span>}</h1>
             <p style={s.subtitle}>{currentSeason?.name || 'All Time'} | {players.length} Players | {matches.length} Matches</p>
           </div>
         </div>
@@ -537,7 +550,7 @@ function FCTracker() {
           <button onClick={() => setShowAddPlayer(true)} style={s.btnSec}>+ Player</button>
           <button onClick={() => setShowOCR(true)} style={s.btnPri}>Scan</button>
           <button onClick={() => setShowAddMatch(true)} style={s.btnAcc}>+ Match</button>
-          <button onClick={() => { if(confirm('Logout?')) { localStorage_.set('fct-auth', false); window.location.reload(); }}} style={s.btnLogout} title="Logout">X</button>
+          <button onClick={() => { if(confirm('Logout?')) { localStorage_.set('fct-auth', false); localStorage_.set('fct-admin', false); window.location.reload(); }}} style={s.btnLogout} title="Logout">X</button>
         </div>
       </header>
 
@@ -604,15 +617,24 @@ function FCTracker() {
                 {eloRanking.map((p, i) => {
                   const elo = eloRatings[p.id] || ELO_START;
                   const diff = elo - ELO_START;
+                  const hasOverride = eloOverrides[p.id] !== undefined;
                   return (
                     <div key={p.id} style={{...s.eloCard, ...(i === 0 ? s.eloGold : {})}}>
                       <span style={{...s.pos, ...(i === 0 ? s.posGold : i < 3 ? s.posTop : {})}}>{i + 1}</span>
-                      <div style={s.eloInfo}><span style={s.eloName}>{p.name}</span></div>
+                      <div style={s.eloInfo}>
+                        <span style={s.eloName}>{p.name}</span>
+                        {hasOverride && <span style={s.eloOverride}>MANUAL</span>}
+                      </div>
                       <div style={s.eloScore}>
                         <span style={s.eloNum}>{elo}</span>
                         <span style={{...s.eloDiff, color: diff > 0 ? '#4ade80' : diff < 0 ? '#f87171' : '#888'}}>{diff > 0 ? '+' : ''}{diff}</span>
                       </div>
-                      <button onClick={() => deletePlayer(p.id)} style={s.btnDelete} title="Remove player">x</button>
+                      {isAdmin && (
+                        <>
+                          <button onClick={() => setShowEloEditor({ playerId: p.id, name: p.name, currentElo: elo })} style={s.btnEdit} title="Edit ELO">E</button>
+                          <button onClick={() => deletePlayer(p.id)} style={s.btnDelete} title="Remove player">x</button>
+                        </>
+                      )}
                     </div>
                   );
                 })}
@@ -654,7 +676,7 @@ function FCTracker() {
           <div style={s.card}>
             <div style={s.cardHead}>
               <h2 style={s.cardTitle}>MATCH HISTORY</h2>
-              {matches.length > 0 && <button onClick={deleteLastMatch} style={s.btnDanger}>Undo Last</button>}
+              {isAdmin && matches.length > 0 && <button onClick={deleteLastMatch} style={s.btnDanger}>Undo Last</button>}
             </div>
             {matches.length === 0 ? <p style={s.empty}>No matches yet. Log your first match!</p> : (
               <div style={s.matchList}>
@@ -690,9 +712,9 @@ function FCTracker() {
               <h2 style={s.cardTitle}>TOURNAMENT</h2>
               {!tournament ? (
                 <button onClick={() => setShowTournamentSetup(true)} style={s.btnPri}>Create</button>
-              ) : (
+              ) : isAdmin ? (
                 <button onClick={() => { if(confirm('End this tournament? This cannot be undone.')) saveToDb('tournament', null, setTournament); }} style={s.btnDanger}>End</button>
-              )}
+              ) : null}
             </div>
 
             {tournament?.phase === 'groups' && tournament.groups && (
@@ -1022,6 +1044,37 @@ function FCTracker() {
         {ocrResult?.error && <div style={s.ocrError}>{ocrResult.error}</div>}
       </Modal>}
 
+      {showEloEditor && <Modal onClose={() => setShowEloEditor(null)} title="EDIT ELO">
+        <p style={s.modalDesc}>Set manual ELO for {showEloEditor.name}</p>
+        <p style={s.eloEditorCurrent}>Current: {showEloEditor.currentElo}</p>
+        <input 
+          type="number" 
+          placeholder="New ELO rating" 
+          defaultValue={showEloEditor.currentElo}
+          id="eloInput"
+          style={s.input} 
+          autoFocus 
+        />
+        <div style={s.modalBtns}>
+          {eloOverrides[showEloEditor.playerId] !== undefined && (
+            <button onClick={() => {
+              const newOverrides = {...eloOverrides};
+              delete newOverrides[showEloEditor.playerId];
+              saveToDb('eloOverrides', newOverrides, setEloOverrides);
+              setShowEloEditor(null);
+            }} style={s.btnDanger}>Reset to Calculated</button>
+          )}
+          <button onClick={() => setShowEloEditor(null)} style={s.btnSec}>Cancel</button>
+          <button onClick={() => {
+            const val = parseInt(document.getElementById('eloInput').value);
+            if (!isNaN(val) && val > 0) {
+              saveToDb('eloOverrides', {...eloOverrides, [showEloEditor.playerId]: val}, setEloOverrides);
+              setShowEloEditor(null);
+            }
+          }} style={s.btnPri}>Save</button>
+        </div>
+      </Modal>}
+
       <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}`}</style>
     </div>
   );
@@ -1103,6 +1156,10 @@ const s = {
   btnDanger: { padding: '0.5rem 0.9rem', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '6px', color: '#fca5a5', fontSize: '0.75rem', cursor: 'pointer', touchAction: 'manipulation', minHeight: '40px' },
   btnLogout: { padding: '0.5rem 0.7rem', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#666', fontSize: '0.75rem', cursor: 'pointer', marginLeft: '0.25rem', touchAction: 'manipulation', minHeight: '40px' },
   btnDelete: { padding: '0.3rem 0.6rem', background: 'transparent', border: 'none', color: '#555', fontSize: '0.9rem', cursor: 'pointer', opacity: 0.5, marginLeft: '0.5rem', touchAction: 'manipulation', minHeight: '36px' },
+  btnEdit: { padding: '0.3rem 0.6rem', background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: '4px', color: '#a5b4fc', fontSize: '0.7rem', cursor: 'pointer', marginLeft: '0.5rem', touchAction: 'manipulation', minHeight: '36px', fontWeight: '700' },
+  eloOverride: { fontSize: '0.5rem', color: '#fbbf24', background: 'rgba(251,191,36,0.15)', padding: '0.1rem 0.3rem', borderRadius: '3px', marginLeft: '0.4rem', fontWeight: '700' },
+  eloEditorCurrent: { textAlign: 'center', fontSize: '0.8rem', color: '#888', marginBottom: '0.75rem' },
+  adminBadge: { fontSize: '0.5rem', background: 'linear-gradient(135deg, #fbbf24, #f59e0b)', color: '#000', padding: '0.2rem 0.5rem', borderRadius: '4px', marginLeft: '0.5rem', fontWeight: '800', verticalAlign: 'middle' },
   matchCardLatest: { border: '1px solid rgba(251,191,36,0.2)', background: 'rgba(251,191,36,0.03)' },
   drawWarning: { textAlign: 'center', color: '#fbbf24', fontSize: '0.7rem', marginBottom: '0.5rem', padding: '0.4rem', background: 'rgba(251,191,36,0.08)', borderRadius: '4px' },
   nav: { display: 'flex', gap: '0.2rem', padding: '0.6rem 1.5rem', borderBottom: '1px solid rgba(255,255,255,0.04)', overflowX: 'auto' },
@@ -1273,6 +1330,7 @@ const s = {
 
 // ============ PASSWORD GATE ============
 const PASSWORD = 'piturca';
+const ADMIN_PASSWORD = 'paquinake';
 
 function PasswordGate({ onSuccess }) {
   const [input, setInput] = useState('');
@@ -1281,9 +1339,13 @@ function PasswordGate({ onSuccess }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (input.toLowerCase() === PASSWORD) {
+    const val = input.toLowerCase();
+    if (val === PASSWORD || val === ADMIN_PASSWORD) {
       localStorage_.set('fct-auth', true);
-      onSuccess();
+      if (val === ADMIN_PASSWORD) {
+        localStorage_.set('fct-admin', true);
+      }
+      onSuccess(val === ADMIN_PASSWORD);
     } else {
       setError(true);
       setShake(true);
@@ -1317,12 +1379,15 @@ function PasswordGate({ onSuccess }) {
 // ============ APP WRAPPER WITH AUTH ============
 function AppWrapper() {
   const [authenticated, setAuthenticated] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
     const auth = localStorage_.get('fct-auth');
+    const admin = localStorage_.get('fct-admin');
     if (auth === true) {
       setAuthenticated(true);
+      setIsAdmin(admin === true);
     }
     setChecking(false);
   }, []);
@@ -1332,10 +1397,10 @@ function AppWrapper() {
   }
 
   if (!authenticated) {
-    return <PasswordGate onSuccess={() => setAuthenticated(true)} />;
+    return <PasswordGate onSuccess={(admin) => { setAuthenticated(true); setIsAdmin(admin); }} />;
   }
 
-  return <FCTracker />;
+  return <FCTracker isAdmin={isAdmin} />;
 }
 
 export default AppWrapper;
