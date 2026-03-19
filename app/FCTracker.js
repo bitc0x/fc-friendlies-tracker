@@ -571,6 +571,7 @@ function FCTracker() {
                       <span style={s.eloNum}>{elo}</span>
                       <span style={{...s.eloDiff, color: diff > 0 ? '#4ade80' : diff < 0 ? '#f87171' : '#888'}}>{diff > 0 ? '+' : ''}{diff}</span>
                     </div>
+                    <button onClick={() => deletePlayer(p.id)} style={s.btnDelete} title="Remove player">x</button>
                   </div>
                 );
               })}
@@ -1046,6 +1047,7 @@ const s = {
   btnSec: { padding: '0.5rem 1rem', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#bbb', fontWeight: '500', fontSize: '0.75rem', cursor: 'pointer' },
   btnDanger: { padding: '0.4rem 0.8rem', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '6px', color: '#fca5a5', fontSize: '0.7rem', cursor: 'pointer' },
   btnLogout: { padding: '0.4rem 0.6rem', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#666', fontSize: '0.7rem', cursor: 'pointer', marginLeft: '0.25rem' },
+  btnDelete: { padding: '0.2rem 0.5rem', background: 'transparent', border: 'none', color: '#555', fontSize: '0.8rem', cursor: 'pointer', opacity: 0.5, marginLeft: '0.5rem' },
   matchCardLatest: { border: '1px solid rgba(251,191,36,0.2)', background: 'rgba(251,191,36,0.03)' },
   drawWarning: { textAlign: 'center', color: '#fbbf24', fontSize: '0.7rem', marginBottom: '0.5rem', padding: '0.4rem', background: 'rgba(251,191,36,0.08)', borderRadius: '4px' },
   nav: { display: 'flex', gap: '0.2rem', padding: '0.6rem 1.5rem', borderBottom: '1px solid rgba(255,255,255,0.04)', overflowX: 'auto' },
