@@ -220,9 +220,14 @@ function FCTracker() {
   // Delete last match (undo)
   const deleteLastMatch = () => {
     if (matches.length === 0) return;
-    if (!confirm('Delete the last match?')) return;
     
     const lastMatch = matches[matches.length - 1];
+    const p1Name = players.find(p => p.id === lastMatch.player1)?.name || 'Unknown';
+    const p2Name = players.find(p => p.id === lastMatch.player2)?.name || 'Unknown';
+    const legInfo = lastMatch.knockoutLeg ? ` (Leg ${lastMatch.knockoutLeg})` : '';
+    
+    if (!confirm(`Delete: ${p1Name} ${lastMatch.score1}-${lastMatch.score2} ${p2Name}${legInfo}?`)) return;
+    
     const newMatches = matches.slice(0, -1);
     save('fct-matches', newMatches, setMatches);
     
@@ -643,7 +648,7 @@ function FCTracker() {
               {!tournament ? (
                 <button onClick={() => setShowTournamentSetup(true)} style={s.btnPri}>Create</button>
               ) : (
-                <button onClick={() => { save('fct-tournament', null, setTournament); }} style={s.btnDanger}>End</button>
+                <button onClick={() => { if(confirm('End this tournament? This cannot be undone.')) save('fct-tournament', null, setTournament); }} style={s.btnDanger}>End</button>
               )}
             </div>
 
@@ -692,6 +697,48 @@ function FCTracker() {
                     );
                   })}
                 </div>
+                {/* Advance to Knockout button */}
+                {(() => {
+                  // Check if all group fixtures are played
+                  const allFixtures = tournament.groupFixtures?.flat() || [];
+                  const playedCount = allFixtures.filter(fix => 
+                    matches.find(m => m.tournamentId === tournament.id && m.player1 === fix.home && m.player2 === fix.away)
+                  ).length;
+                  const allPlayed = playedCount === allFixtures.length && allFixtures.length > 0;
+                  
+                  return (
+                    <div style={s.advanceSection}>
+                      <p style={s.advanceInfo}>{playedCount}/{allFixtures.length} group fixtures played</p>
+                      <button 
+                        onClick={() => {
+                          if (!confirm('Advance top 2 from each group to knockout stage?')) return;
+                          const qualifiers = [];
+                          tournament.groups.forEach(group => {
+                            const groupStandings = calculateStandings(true).filter(st => group.includes(st.id));
+                            qualifiers.push(...groupStandings.slice(0, 2).map(st => st.id));
+                          });
+                          
+                          // Create knockout bracket
+                          const bracketSize = Math.pow(2, Math.ceil(Math.log2(qualifiers.length)));
+                          const bracket = new Array(bracketSize).fill(null);
+                          qualifiers.forEach((pid, idx) => { bracket[idx] = pid; });
+                          
+                          const updatedTournament = {
+                            ...tournament,
+                            phase: 'knockout',
+                            knockoutBracket: { 0: bracket },
+                            knockoutResults: {}
+                          };
+                          save('fct-tournament', updatedTournament, setTournament);
+                        }}
+                        style={{...s.btnPri, ...(allPlayed ? {} : { opacity: 0.5 })}}
+                        disabled={!allPlayed}
+                      >
+                        Advance to Knockout
+                      </button>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
@@ -1093,6 +1140,8 @@ const s = {
   championLabel: { fontSize: '0.7rem', fontWeight: '700', color: '#fbbf24', letterSpacing: '0.2em', marginBottom: '0.5rem' },
   championName: { fontSize: '1.5rem', fontWeight: '800', color: '#fff', textTransform: 'uppercase' },
   championTeam: { fontSize: '0.8rem', color: '#888', marginTop: '0.25rem' },
+  advanceSection: { marginTop: '1.5rem', padding: '1rem', background: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.15)', borderRadius: '8px', textAlign: 'center' },
+  advanceInfo: { fontSize: '0.7rem', color: '#888', marginBottom: '0.75rem' },
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' },
   modal: { background: 'linear-gradient(145deg, #18182a, #12121a)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px', padding: '1.5rem', maxWidth: '400px', width: '100%', maxHeight: '90vh', overflowY: 'auto' },
   modalWide: { maxWidth: '550px' },
