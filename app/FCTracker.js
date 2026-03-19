@@ -460,7 +460,14 @@ function FCTracker({ isAdmin }) {
 
   // Tournament draw
   const performDraw = async () => {
-    const playerIds = players.map(p => p.id);
+    // Only include players who have a team selected
+    const playerIds = players.filter(p => teamSelections[p.id]).map(p => p.id);
+    
+    if (playerIds.length < 2) {
+      alert('Need at least 2 players with teams selected');
+      return;
+    }
+    
     const sorted = [...playerIds].sort((a, b) => (eloRatings[b] || ELO_START) - (eloRatings[a] || ELO_START));
     
     const numPots = playerIds.length <= 4 ? 1 : playerIds.length <= 8 ? 2 : playerIds.length <= 12 ? 3 : 4;
@@ -488,11 +495,15 @@ function FCTracker({ isAdmin }) {
       await new Promise(r => setTimeout(r, 400));
     }
 
+    // Only store teamSelections for participating players
+    const participantTeams = {};
+    playerIds.forEach(id => { participantTeams[id] = teamSelections[id]; });
+
     let tournamentData = {
       id: Date.now().toString(),
       type: tournamentType,
       players: playerIds,
-      teamSelections,
+      teamSelections: participantTeams,
       created: new Date().toISOString()
     };
 
@@ -524,7 +535,7 @@ function FCTracker({ isAdmin }) {
     await new Promise(r => setTimeout(r, 500));
     saveToDb('tournament', tournamentData, setTournament);
     setShowDraw(false); setShowTournamentSetup(false); setShowTeamSelect(false);
-    setDrawAnimation(null); setDrawnOrder([]);
+    setDrawAnimation(null); setDrawnOrder([]); setTeamSelections({});
   };
 
   // H2H
