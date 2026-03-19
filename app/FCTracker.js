@@ -83,8 +83,6 @@ function FCTracker({ isAdmin }) {
   const [matches, setMatches] = useState([]);
   const [tournament, setTournament] = useState(null);
   const [eloOverrides, setEloOverrides] = useState({});
-  const [seasons, setSeasons] = useState([]);
-  const [currentSeason, setCurrentSeason] = useState(null);
   const [loading, setLoading] = useState(true);
   
   // Modals
@@ -192,7 +190,7 @@ function FCTracker({ isAdmin }) {
       id: Date.now().toString(), player1: p1, player2: p2,
       score1: parseInt(s1) || 0, score2: parseInt(s2) || 0,
       date: new Date().toISOString(),
-      seasonId: currentSeason?.id || null, tournamentId: tournament?.id || null,
+      tournamentId: tournament?.id || null,
       team1: tournament?.teamSelections?.[p1] || null, team2: tournament?.teamSelections?.[p2] || null,
       knockoutRound, knockoutMatchIdx, knockoutLeg
     };
@@ -329,8 +327,29 @@ function FCTracker({ isAdmin }) {
     const newMatches = matches.slice(0, -1);
     saveToDb('matches', newMatches, setMatches);
     
+    // If it was a league final match, update finalResult
+    if (tournament && lastMatch.knockoutRound === 'final' && lastMatch.knockoutLeg !== null) {
+      const updatedTournament = JSON.parse(JSON.stringify(tournament));
+      
+      if (lastMatch.knockoutLeg === 1) {
+        delete updatedTournament.finalResult?.leg1;
+      } else if (lastMatch.knockoutLeg === 2) {
+        if (updatedTournament.finalResult) {
+          delete updatedTournament.finalResult.leg2;
+          delete updatedTournament.finalResult.winner;
+          delete updatedTournament.finalResult.aggregate;
+        }
+      }
+      
+      // Clean up empty finalResult
+      if (updatedTournament.finalResult && Object.keys(updatedTournament.finalResult).length === 0) {
+        updatedTournament.finalResult = null;
+      }
+      
+      saveToDb('tournament', updatedTournament, setTournament);
+    }
     // If it was a knockout match, also update tournament results
-    if (tournament && lastMatch.knockoutRound !== null && lastMatch.knockoutLeg !== null) {
+    else if (tournament && lastMatch.knockoutRound !== null && lastMatch.knockoutRound !== 'final' && lastMatch.knockoutLeg !== null) {
       const updatedTournament = JSON.parse(JSON.stringify(tournament));
       const matchResult = updatedTournament.knockoutResults?.[lastMatch.knockoutRound]?.[lastMatch.knockoutMatchIdx];
       
@@ -378,7 +397,7 @@ function FCTracker({ isAdmin }) {
       stats[p.id] = { id: p.id, name: p.name, psn: p.psn, played: 0, won: 0, drawn: 0, lost: 0, gf: 0, ga: 0, gd: 0, points: 0 };
     });
     
-    let relevantMatches = currentSeason ? matches.filter(m => m.seasonId === currentSeason.id) : matches;
+    let relevantMatches = matches;
     if (filterTournament && tournament) relevantMatches = relevantMatches.filter(m => m.tournamentId === tournament.id);
     
     relevantMatches.forEach(m => {
@@ -581,7 +600,7 @@ function FCTracker({ isAdmin }) {
           <div style={s.logo}>FC</div>
           <div>
             <h1 style={s.title}>FRIENDLIES TRACKER {isAdmin && <span style={s.adminBadge}>ADMIN</span>}</h1>
-            <p style={s.subtitle}>{currentSeason?.name || 'All Time'} | {players.length} Players | {matches.length} Matches</p>
+            <p style={s.subtitle}>{players.length} Players | {matches.length} Matches</p>
           </div>
         </div>
         <div style={s.headerBtns}>
@@ -966,33 +985,35 @@ function FCTracker({ isAdmin }) {
                   return (
                     <div style={s.advanceSection}>
                       <p style={s.advanceInfo}>{playedCount}/{allFixtures.length} group fixtures played</p>
-                      <button 
-                        onClick={() => {
-                          if (!confirm('Advance top 2 from each group to knockout stage?')) return;
-                          const qualifiers = [];
-                          tournament.groups.forEach(group => {
-                            const groupStandings = calculateStandings(true).filter(st => group.includes(st.id));
-                            qualifiers.push(...groupStandings.slice(0, 2).map(st => st.id));
-                          });
-                          
-                          // Create knockout bracket
-                          const bracketSize = Math.pow(2, Math.ceil(Math.log2(qualifiers.length)));
-                          const bracket = new Array(bracketSize).fill(null);
-                          qualifiers.forEach((pid, idx) => { bracket[idx] = pid; });
-                          
-                          const updatedTournament = {
-                            ...tournament,
-                            phase: 'knockout',
-                            knockoutBracket: { 0: bracket },
-                            knockoutResults: {}
-                          };
-                          saveToDb('tournament', updatedTournament, setTournament);
-                        }}
-                        style={{...s.btnPri, ...(allPlayed ? {} : { opacity: 0.5 })}}
-                        disabled={!allPlayed}
-                      >
-                        Advance to Knockout
-                      </button>
+                      {isAdmin && (
+                        <button 
+                          onClick={() => {
+                            if (!confirm('Advance top 2 from each group to knockout stage?')) return;
+                            const qualifiers = [];
+                            tournament.groups.forEach(group => {
+                              const groupStandings = calculateStandings(true).filter(st => group.includes(st.id));
+                              qualifiers.push(...groupStandings.slice(0, 2).map(st => st.id));
+                            });
+                            
+                            // Create knockout bracket
+                            const bracketSize = Math.pow(2, Math.ceil(Math.log2(qualifiers.length)));
+                            const bracket = new Array(bracketSize).fill(null);
+                            qualifiers.forEach((pid, idx) => { bracket[idx] = pid; });
+                            
+                            const updatedTournament = {
+                              ...tournament,
+                              phase: 'knockout',
+                              knockoutBracket: { 0: bracket },
+                              knockoutResults: {}
+                            };
+                            saveToDb('tournament', updatedTournament, setTournament);
+                          }}
+                          style={{...s.btnPri, ...(allPlayed ? {} : { opacity: 0.5 })}}
+                          disabled={!allPlayed}
+                        >
+                          Advance to Knockout
+                        </button>
+                      )}
                     </div>
                   );
                 })()}
