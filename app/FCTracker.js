@@ -181,6 +181,22 @@ function FCTracker() {
     setShowAddMatch(false); setShowKnockoutMatch(null); setShowOCR(false); setOcrResult(null);
   };
 
+  // Delete last match (undo)
+  const deleteLastMatch = () => {
+    if (matches.length === 0) return;
+    if (!confirm('Delete the last match?')) return;
+    const newMatches = matches.slice(0, -1);
+    save('fct-matches', newMatches, setMatches);
+  };
+
+  // Delete player
+  const deletePlayer = (playerId) => {
+    const player = players.find(p => p.id === playerId);
+    if (!confirm(`Remove ${player?.name}? Their match history will remain.`)) return;
+    const newPlayers = players.filter(p => p.id !== playerId);
+    save('fct-players', newPlayers, setPlayers);
+  };
+
   // Standings calculation
   const calculateStandings = (filterTournament = false) => {
     const stats = {};
@@ -393,6 +409,7 @@ function FCTracker() {
           <button onClick={() => setShowAddPlayer(true)} style={s.btnSec}>+ Player</button>
           <button onClick={() => setShowOCR(true)} style={s.btnPri}>Scan</button>
           <button onClick={() => setShowAddMatch(true)} style={s.btnAcc}>+ Match</button>
+          <button onClick={() => { if(confirm('Logout?')) { storage.set('fct-auth', false); window.location.reload(); }}} style={s.btnLogout} title="Logout">X</button>
         </div>
       </header>
 
@@ -504,29 +521,34 @@ function FCTracker() {
         {/* Matches */}
         {view === 'matches' && (
           <div style={s.card}>
-            <div style={s.cardHead}><h2 style={s.cardTitle}>MATCH HISTORY</h2></div>
-            <div style={s.matchList}>
-              {[...matches].reverse().slice(0, 20).map(m => (
-                <div key={m.id} style={s.matchCard}>
-                  <div style={s.matchDate}>{new Date(m.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</div>
-                  <div style={s.matchContent}>
-                    <div style={{...s.matchPlayer, ...(m.score1 > m.score2 ? s.matchWinner : {})}}>
-                      <span>{getPlayerName(m.player1)}</span>
-                      {m.team1 && <span style={s.matchTeam}>{m.team1}</span>}
-                    </div>
-                    <div style={s.matchScoreBox}>
-                      <span style={m.score1 > m.score2 ? s.scoreWin : {}}>{m.score1}</span>
-                      <span style={s.scoreSep}>-</span>
-                      <span style={m.score2 > m.score1 ? s.scoreWin : {}}>{m.score2}</span>
-                    </div>
-                    <div style={{...s.matchPlayer, ...s.matchPlayerR, ...(m.score2 > m.score1 ? s.matchWinner : {})}}>
-                      <span>{getPlayerName(m.player2)}</span>
-                      {m.team2 && <span style={s.matchTeam}>{m.team2}</span>}
+            <div style={s.cardHead}>
+              <h2 style={s.cardTitle}>MATCH HISTORY</h2>
+              {matches.length > 0 && <button onClick={deleteLastMatch} style={s.btnDanger}>Undo Last</button>}
+            </div>
+            {matches.length === 0 ? <p style={s.empty}>No matches yet. Log your first match!</p> : (
+              <div style={s.matchList}>
+                {[...matches].reverse().slice(0, 30).map((m, i) => (
+                  <div key={m.id} style={{...s.matchCard, ...(i === 0 ? s.matchCardLatest : {})}}>
+                    <div style={s.matchDate}>{new Date(m.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</div>
+                    <div style={s.matchContent}>
+                      <div style={{...s.matchPlayer, ...(m.score1 > m.score2 ? s.matchWinner : {})}}>
+                        <span>{getPlayerName(m.player1)}</span>
+                        {m.team1 && <span style={s.matchTeam}>{m.team1}</span>}
+                      </div>
+                      <div style={s.matchScoreBox}>
+                        <span style={m.score1 > m.score2 ? s.scoreWin : {}}>{m.score1}</span>
+                        <span style={s.scoreSep}>-</span>
+                        <span style={m.score2 > m.score1 ? s.scoreWin : {}}>{m.score2}</span>
+                      </div>
+                      <div style={{...s.matchPlayer, ...s.matchPlayerR, ...(m.score2 > m.score1 ? s.matchWinner : {})}}>
+                        <span>{getPlayerName(m.player2)}</span>
+                        {m.team2 && <span style={s.matchTeam}>{m.team2}</span>}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -669,9 +691,10 @@ function FCTracker() {
           <span style={s.vs}>-</span>
           <input type="number" min="0" max="99" value={matchData.score2} onChange={e => setMatchData({...matchData, score2: e.target.value})} style={s.scoreInput} />
         </div>
+        {String(matchData.score1) === String(matchData.score2) && <p style={s.drawWarning}>No draws in knockout rounds</p>}
         <div style={s.modalBtns}>
           <button onClick={() => setShowKnockoutMatch(null)} style={s.btnSec}>Cancel</button>
-          <button onClick={() => addMatch(showKnockoutMatch.p1, showKnockoutMatch.p2, matchData.score1, matchData.score2, showKnockoutMatch.round, showKnockoutMatch.matchIdx)} style={s.btnAcc}>Submit Result</button>
+          <button onClick={() => addMatch(showKnockoutMatch.p1, showKnockoutMatch.p2, matchData.score1, matchData.score2, showKnockoutMatch.round, showKnockoutMatch.matchIdx)} disabled={String(matchData.score1) === String(matchData.score2)} style={{...s.btnAcc, ...(String(matchData.score1) === String(matchData.score2) ? {opacity: 0.5, cursor: 'not-allowed'} : {})}}>Submit Result</button>
         </div>
       </Modal>}
 
@@ -840,6 +863,9 @@ const s = {
   btnAcc: { padding: '0.5rem 1rem', background: 'linear-gradient(135deg, #fbbf24, #f59e0b)', border: 'none', borderRadius: '6px', color: '#000', fontWeight: '700', fontSize: '0.75rem', cursor: 'pointer' },
   btnSec: { padding: '0.5rem 1rem', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#bbb', fontWeight: '500', fontSize: '0.75rem', cursor: 'pointer' },
   btnDanger: { padding: '0.4rem 0.8rem', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '6px', color: '#fca5a5', fontSize: '0.7rem', cursor: 'pointer' },
+  btnLogout: { padding: '0.4rem 0.6rem', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#666', fontSize: '0.7rem', cursor: 'pointer', marginLeft: '0.25rem' },
+  matchCardLatest: { border: '1px solid rgba(251,191,36,0.2)', background: 'rgba(251,191,36,0.03)' },
+  drawWarning: { textAlign: 'center', color: '#fbbf24', fontSize: '0.7rem', marginBottom: '0.5rem', padding: '0.4rem', background: 'rgba(251,191,36,0.08)', borderRadius: '4px' },
   nav: { display: 'flex', gap: '0.2rem', padding: '0.6rem 1.5rem', borderBottom: '1px solid rgba(255,255,255,0.04)', overflowX: 'auto' },
   navBtn: { padding: '0.4rem 1rem', background: 'transparent', border: 'none', color: '#666', fontSize: '0.7rem', fontWeight: '600', cursor: 'pointer', borderRadius: '4px', whiteSpace: 'nowrap' },
   navActive: { background: 'rgba(99,102,241,0.15)', color: '#a5b4fc' },
