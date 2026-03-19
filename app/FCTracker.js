@@ -628,19 +628,12 @@ function FCTracker({ isAdmin }) {
   const processOCR = async (base64, mediaType) => {
     setOcrProcessing(true);
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      const response = await fetch('/api/ocr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514', max_tokens: 500,
-          messages: [{ role: 'user', content: [
-            { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
-            { type: 'text', text: 'Extract the final score from this EA FC/FIFA match result screenshot. Return ONLY JSON: {"team1":"Name","score1":0,"team2":"Name","score2":0} or {"error":"reason"}' }
-          ]}]
-        })
+        body: JSON.stringify({ image: base64, mediaType })
       });
-      const data = await response.json();
-      const result = JSON.parse((data.content?.[0]?.text || '{}').replace(/```json|```/g, '').trim());
+      const result = await response.json();
       setOcrResult(result.error ? { error: result.error } : result);
     } catch (e) { setOcrResult({ error: 'Failed to process image' }); }
     setOcrProcessing(false);
@@ -684,6 +677,7 @@ function FCTracker({ isAdmin }) {
         </div>
         <div style={s.headerBtns}>
           <button onClick={() => setShowAddPlayer(true)} style={s.btnSec}>+ Player</button>
+          <button onClick={() => setShowOCR(true)} style={s.btnPri}>Scan</button>
           <button onClick={() => setShowAddMatch(true)} style={s.btnAcc}>+ Match</button>
           <button onClick={() => { if(confirm('Logout?')) { localStorage_.set('fct-auth', false); localStorage_.set('fct-admin', false); window.location.reload(); }}} style={s.btnLogout} title="Logout">X</button>
         </div>
