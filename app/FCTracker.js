@@ -94,6 +94,7 @@ function FCTracker({ isAdmin }) {
   const [showOCR, setShowOCR] = useState(false);
   const [showKnockoutMatch, setShowKnockoutMatch] = useState(null);
   const [showEloEditor, setShowEloEditor] = useState(null);
+  const [showPlayerStats, setShowPlayerStats] = useState(null);
   
   // Form states
   const [newPlayerName, setNewPlayerName] = useState('');
@@ -548,6 +549,81 @@ function FCTracker({ isAdmin }) {
     return my > their ? 'W' : my < their ? 'L' : 'D';
   });
 
+  const getPlayerStats = (playerId) => {
+    const player = players.find(p => p.id === playerId);
+    if (!player) return null;
+    
+    const playerMatches = matches.filter(m => m.player1 === playerId || m.player2 === playerId);
+    let wins = 0, draws = 0, losses = 0, goalsFor = 0, goalsAgainst = 0;
+    let biggestWin = null, biggestLoss = null;
+    const opponents = {};
+    
+    playerMatches.forEach(m => {
+      const isP1 = m.player1 === playerId;
+      const myScore = isP1 ? m.score1 : m.score2;
+      const theirScore = isP1 ? m.score2 : m.score1;
+      const oppId = isP1 ? m.player2 : m.player1;
+      
+      goalsFor += myScore;
+      goalsAgainst += theirScore;
+      
+      if (myScore > theirScore) {
+        wins++;
+        const diff = myScore - theirScore;
+        if (!biggestWin || diff > biggestWin.diff) {
+          biggestWin = { score: `${myScore}-${theirScore}`, opponent: oppId, diff };
+        }
+      } else if (myScore < theirScore) {
+        losses++;
+        const diff = theirScore - myScore;
+        if (!biggestLoss || diff > biggestLoss.diff) {
+          biggestLoss = { score: `${myScore}-${theirScore}`, opponent: oppId, diff };
+        }
+      } else {
+        draws++;
+      }
+      
+      if (!opponents[oppId]) opponents[oppId] = { w: 0, d: 0, l: 0 };
+      if (myScore > theirScore) opponents[oppId].w++;
+      else if (myScore < theirScore) opponents[oppId].l++;
+      else opponents[oppId].d++;
+    });
+    
+    const totalMatches = wins + draws + losses;
+    const winRate = totalMatches > 0 ? Math.round((wins / totalMatches) * 100) : 0;
+    const avgGoalsFor = totalMatches > 0 ? (goalsFor / totalMatches).toFixed(1) : '0.0';
+    const avgGoalsAgainst = totalMatches > 0 ? (goalsAgainst / totalMatches).toFixed(1) : '0.0';
+    
+    // Find best and worst matchups
+    let bestMatchup = null, worstMatchup = null;
+    Object.entries(opponents).forEach(([oppId, record]) => {
+      const total = record.w + record.d + record.l;
+      if (total >= 2) {
+        const wr = record.w / total;
+        if (!bestMatchup || wr > bestMatchup.wr) {
+          bestMatchup = { oppId, ...record, wr };
+        }
+        if (!worstMatchup || wr < worstMatchup.wr) {
+          worstMatchup = { oppId, ...record, wr };
+        }
+      }
+    });
+    
+    return {
+      player,
+      totalMatches,
+      wins, draws, losses,
+      winRate,
+      goalsFor, goalsAgainst,
+      goalDiff: goalsFor - goalsAgainst,
+      avgGoalsFor, avgGoalsAgainst,
+      biggestWin, biggestLoss,
+      bestMatchup, worstMatchup,
+      elo: eloRatings[playerId] || ELO_START,
+      form: getPlayerForm(playerId)
+    };
+  };
+
   // OCR
   const processOCR = async (base64, mediaType) => {
     setOcrProcessing(true);
@@ -644,8 +720,8 @@ function FCTracker({ isAdmin }) {
                         <tr key={st.id} style={{...s.tr, ...(i === 0 ? s.trGold : i < 4 ? s.trTop : {})}}>
                           <td style={s.td}><span style={{...s.pos, ...(i === 0 ? s.posGold : i < 4 ? s.posTop : {})}}>{i + 1}</span></td>
                           <td style={{...s.td, textAlign: 'left'}}>
-                            <div style={s.playerCell}>
-                              <span style={s.playerName}>{st.name}</span>
+                            <div style={s.playerCell} onClick={() => setShowPlayerStats(st.id)}>
+                              <span style={s.playerNameClick}>{st.name}</span>
                               {team && <span style={s.teamTag}>{team}</span>}
                             </div>
                           </td>
@@ -680,8 +756,8 @@ function FCTracker({ isAdmin }) {
                   return (
                     <div key={p.id} style={{...s.eloCard, ...(i === 0 ? s.eloGold : {})}}>
                       <span style={{...s.pos, ...(i === 0 ? s.posGold : i < 3 ? s.posTop : {})}}>{i + 1}</span>
-                      <div style={s.eloInfo}>
-                        <span style={s.eloName}>{p.name}</span>
+                      <div style={s.eloInfo} onClick={() => setShowPlayerStats(p.id)}>
+                        <span style={s.eloNameClick}>{p.name}</span>
                         {hasOverride && <span style={s.eloOverride}>MANUAL</span>}
                       </div>
                       <div style={s.eloScore}>
@@ -1283,6 +1359,104 @@ function FCTracker({ isAdmin }) {
         </div>
       </Modal>}
 
+      {showPlayerStats && (() => {
+        const stats = getPlayerStats(showPlayerStats);
+        if (!stats) return null;
+        return (
+          <Modal onClose={() => setShowPlayerStats(null)} title="PLAYER STATS" wide>
+            <div style={s.statsHeader}>
+              <div style={s.statsName}>{stats.player.name}</div>
+              {stats.player.psn && <div style={s.statsPsn}>{stats.player.psn}</div>}
+              <div style={s.statsElo}>ELO: <span style={s.statsEloNum}>{stats.elo}</span></div>
+            </div>
+            
+            <div style={s.statsGrid}>
+              <div style={s.statBox}>
+                <div style={s.statValue}>{stats.totalMatches}</div>
+                <div style={s.statLabel}>Matches</div>
+              </div>
+              <div style={s.statBox}>
+                <div style={{...s.statValue, color: '#4ade80'}}>{stats.winRate}%</div>
+                <div style={s.statLabel}>Win Rate</div>
+              </div>
+              <div style={s.statBox}>
+                <div style={s.statValue}>{stats.goalsFor}</div>
+                <div style={s.statLabel}>Goals For</div>
+              </div>
+              <div style={s.statBox}>
+                <div style={s.statValue}>{stats.goalsAgainst}</div>
+                <div style={s.statLabel}>Goals Against</div>
+              </div>
+            </div>
+            
+            <div style={s.statsRecord}>
+              <span style={{color: '#4ade80'}}>{stats.wins}W</span>
+              <span style={{color: '#888'}}>{stats.draws}D</span>
+              <span style={{color: '#f87171'}}>{stats.losses}L</span>
+            </div>
+            
+            <div style={s.statsAvg}>
+              <div>Avg Goals Scored: <strong>{stats.avgGoalsFor}</strong></div>
+              <div>Avg Goals Conceded: <strong>{stats.avgGoalsAgainst}</strong></div>
+              <div>Goal Difference: <strong style={{color: stats.goalDiff > 0 ? '#4ade80' : stats.goalDiff < 0 ? '#f87171' : '#888'}}>{stats.goalDiff > 0 ? '+' : ''}{stats.goalDiff}</strong></div>
+            </div>
+            
+            {(stats.biggestWin || stats.biggestLoss) && (
+              <div style={s.statsExtreme}>
+                {stats.biggestWin && (
+                  <div style={s.statsExtremeItem}>
+                    <span style={s.statsExtremeLabel}>Biggest Win</span>
+                    <span style={{color: '#4ade80'}}>{stats.biggestWin.score}</span>
+                    <span style={s.statsExtremeOpp}>vs {getPlayerName(stats.biggestWin.opponent)}</span>
+                  </div>
+                )}
+                {stats.biggestLoss && (
+                  <div style={s.statsExtremeItem}>
+                    <span style={s.statsExtremeLabel}>Worst Loss</span>
+                    <span style={{color: '#f87171'}}>{stats.biggestLoss.score}</span>
+                    <span style={s.statsExtremeOpp}>vs {getPlayerName(stats.biggestLoss.opponent)}</span>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {(stats.bestMatchup || stats.worstMatchup) && (
+              <div style={s.statsMatchups}>
+                {stats.bestMatchup && stats.bestMatchup.oppId !== stats.worstMatchup?.oppId && (
+                  <div style={s.statsMatchupItem}>
+                    <span style={s.statsMatchupLabel}>Best vs</span>
+                    <span style={s.statsMatchupName}>{getPlayerName(stats.bestMatchup.oppId)}</span>
+                    <span style={{color: '#4ade80'}}>{stats.bestMatchup.w}-{stats.bestMatchup.d}-{stats.bestMatchup.l}</span>
+                  </div>
+                )}
+                {stats.worstMatchup && stats.worstMatchup.oppId !== stats.bestMatchup?.oppId && (
+                  <div style={s.statsMatchupItem}>
+                    <span style={s.statsMatchupLabel}>Worst vs</span>
+                    <span style={s.statsMatchupName}>{getPlayerName(stats.worstMatchup.oppId)}</span>
+                    <span style={{color: '#f87171'}}>{stats.worstMatchup.w}-{stats.worstMatchup.d}-{stats.worstMatchup.l}</span>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {stats.form.length > 0 && (
+              <div style={s.statsForm}>
+                <span style={s.statsFormLabel}>Recent Form:</span>
+                <div style={s.formRow}>
+                  {stats.form.map((f, i) => (
+                    <span key={i} style={{...s.formDot, background: f === 'W' ? '#4ade80' : f === 'L' ? '#f87171' : '#888'}}>{f}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            <div style={s.modalBtns}>
+              <button onClick={() => setShowPlayerStats(null)} style={s.btnPri}>Close</button>
+            </div>
+          </Modal>
+        );
+      })()}
+
       <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}`}</style>
     </div>
   );
@@ -1393,6 +1567,7 @@ const s = {
   posTop: { background: 'rgba(99,102,241,0.3)', color: '#a5b4fc' },
   playerCell: { display: 'flex', flexDirection: 'column', gap: '0.05rem' },
   playerName: { fontWeight: '600', color: '#fff' },
+  playerNameClick: { fontWeight: '600', color: '#fff', cursor: 'pointer', borderBottom: '1px dashed rgba(255,255,255,0.3)' },
   teamTag: { fontSize: '0.55rem', color: '#fbbf24' },
   formRow: { display: 'flex', gap: '2px', justifyContent: 'center' },
   formDot: { width: '14px', height: '14px', borderRadius: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.5rem', fontWeight: '700', color: '#000' },
@@ -1401,6 +1576,7 @@ const s = {
   eloGold: { background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.15)' },
   eloInfo: { flex: 1 },
   eloName: { fontWeight: '600', color: '#fff', fontSize: '0.85rem' },
+  eloNameClick: { fontWeight: '600', color: '#fff', fontSize: '0.85rem', cursor: 'pointer', borderBottom: '1px dashed rgba(255,255,255,0.3)' },
   eloScore: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end' },
   eloNum: { fontSize: '1.1rem', fontWeight: '800', color: '#fff' },
   eloDiff: { fontSize: '0.65rem', fontWeight: '600' },
@@ -1551,6 +1727,28 @@ const s = {
   pwInputError: { borderColor: 'rgba(239,68,68,0.5)' },
   pwBtn: { width: '100%', padding: '0.85rem', background: 'linear-gradient(135deg, #6366f1, #4f46e5)', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: '700', fontSize: '0.85rem', cursor: 'pointer', marginBottom: '0.75rem' },
   pwError: { color: '#f87171', fontSize: '0.75rem', marginTop: '0.5rem' },
+  // Player stats modal styles
+  statsHeader: { textAlign: 'center', marginBottom: '1.25rem', paddingBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.08)' },
+  statsName: { fontSize: '1.4rem', fontWeight: '800', color: '#fff', marginBottom: '0.25rem' },
+  statsPsn: { fontSize: '0.7rem', color: '#888', marginBottom: '0.5rem' },
+  statsElo: { fontSize: '0.8rem', color: '#a5b4fc' },
+  statsEloNum: { fontWeight: '700', fontSize: '1rem' },
+  statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.75rem', marginBottom: '1rem' },
+  statBox: { background: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '0.75rem 0.5rem', textAlign: 'center' },
+  statValue: { fontSize: '1.3rem', fontWeight: '800', color: '#fff', marginBottom: '0.2rem' },
+  statLabel: { fontSize: '0.55rem', color: '#666', textTransform: 'uppercase', letterSpacing: '0.05em' },
+  statsRecord: { display: 'flex', justifyContent: 'center', gap: '1.5rem', fontSize: '1rem', fontWeight: '700', marginBottom: '1rem' },
+  statsAvg: { display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.75rem', color: '#aaa', marginBottom: '1rem', padding: '0.75rem', background: 'rgba(0,0,0,0.2)', borderRadius: '8px' },
+  statsExtreme: { display: 'flex', gap: '1rem', marginBottom: '1rem' },
+  statsExtremeItem: { flex: 1, padding: '0.75rem', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', textAlign: 'center' },
+  statsExtremeLabel: { display: 'block', fontSize: '0.55rem', color: '#666', textTransform: 'uppercase', marginBottom: '0.3rem' },
+  statsExtremeOpp: { display: 'block', fontSize: '0.65rem', color: '#888', marginTop: '0.2rem' },
+  statsMatchups: { display: 'flex', gap: '1rem', marginBottom: '1rem' },
+  statsMatchupItem: { flex: 1, padding: '0.6rem', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', textAlign: 'center', fontSize: '0.75rem' },
+  statsMatchupLabel: { display: 'block', fontSize: '0.5rem', color: '#666', textTransform: 'uppercase', marginBottom: '0.2rem' },
+  statsMatchupName: { display: 'block', color: '#fff', fontWeight: '600', marginBottom: '0.15rem' },
+  statsForm: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', marginBottom: '1rem' },
+  statsFormLabel: { fontSize: '0.7rem', color: '#888' },
 };
 
 // ============ PASSWORD GATE ============
