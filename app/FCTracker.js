@@ -102,7 +102,7 @@ function FCTracker({ isAdmin }) {
   const [newPlayerPSN, setNewPlayerPSN] = useState('');
   const [matchData, setMatchData] = useState({ player1: '', player2: '', score1: 0, score2: 0 });
   const [teamSelections, setTeamSelections] = useState({});
-  const [tournamentType, setTournamentType] = useState('knockout');
+  const [tournamentType, setTournamentType] = useState('league');
   const [groupCount, setGroupCount] = useState(2);
   
   // Draw animation
@@ -199,8 +199,53 @@ function FCTracker({ isAdmin }) {
     const newMatches = [...matches, newMatch];
     saveToDb('matches', newMatches, setMatches);
     
+    // Handle league final (two-leg)
+    if (tournament && knockoutRound === 'final' && knockoutLeg !== null) {
+      const updatedTournament = JSON.parse(JSON.stringify(tournament));
+      if (!updatedTournament.finalResult) updatedTournament.finalResult = {};
+      
+      const finalists = tournament.finalists;
+      const origP1 = finalists[0];
+      const origP2 = finalists[1];
+      
+      if (knockoutLeg === 1) {
+        updatedTournament.finalResult.leg1 = { p1Goals: newMatch.score1, p2Goals: newMatch.score2 };
+      } else {
+        updatedTournament.finalResult.leg2 = { p1Goals: newMatch.score1, p2Goals: newMatch.score2 };
+      }
+      
+      // Check if both legs are complete
+      if (updatedTournament.finalResult.leg1 && updatedTournament.finalResult.leg2) {
+        const p1Agg = updatedTournament.finalResult.leg1.p1Goals + updatedTournament.finalResult.leg2.p1Goals;
+        const p2Agg = updatedTournament.finalResult.leg1.p2Goals + updatedTournament.finalResult.leg2.p2Goals;
+        
+        let winner = null;
+        if (p1Agg > p2Agg) {
+          winner = origP1;
+        } else if (p2Agg > p1Agg) {
+          winner = origP2;
+        } else {
+          // Aggregate tied - use away goals
+          const p1Away = updatedTournament.finalResult.leg2.p1Goals;
+          const p2Away = updatedTournament.finalResult.leg1.p2Goals;
+          if (p1Away > p2Away) {
+            winner = origP1;
+          } else if (p2Away > p1Away) {
+            winner = origP2;
+          } else {
+            // Still tied - higher seed (p1) wins
+            winner = origP1;
+          }
+        }
+        
+        updatedTournament.finalResult.winner = winner;
+        updatedTournament.finalResult.aggregate = `${p1Agg}-${p2Agg}`;
+      }
+      
+      saveToDb('tournament', updatedTournament, setTournament);
+    }
     // Handle two-leg knockout system
-    if (tournament && knockoutRound !== null && knockoutMatchIdx !== null && knockoutLeg !== null) {
+    else if (tournament && knockoutRound !== null && knockoutRound !== 'final' && knockoutMatchIdx !== null && knockoutLeg !== null) {
       const updatedTournament = JSON.parse(JSON.stringify(tournament));
       if (!updatedTournament.knockoutResults) updatedTournament.knockoutResults = {};
       if (!updatedTournament.knockoutResults[knockoutRound]) updatedTournament.knockoutResults[knockoutRound] = {};
@@ -431,18 +476,11 @@ function FCTracker({ isAdmin }) {
       created: new Date().toISOString()
     };
 
-    if (tournamentType === 'knockout') {
-      const bracketSize = Math.pow(2, Math.ceil(Math.log2(playerIds.length)));
-      const bracket = new Array(bracketSize).fill(null);
-      const flattened = pots.flat();
-      
-      flattened.forEach((pid, idx) => {
-        if (idx < bracketSize) bracket[idx] = pid;
-      });
-      
-      tournamentData.knockoutBracket = { 0: bracket };
-      tournamentData.knockoutResults = {};
-      tournamentData.phase = 'knockout';
+    if (tournamentType === 'league') {
+      // League + Final: everyone plays everyone twice, top 2 go to final
+      const leagueFixtures = generateGroupFixtures(playerIds);
+      tournamentData.leagueFixtures = leagueFixtures;
+      tournamentData.phase = 'league';
     } else if (tournamentType === 'groups') {
       const groups = Array.from({ length: groupCount }, () => []);
       let groupIdx = 0;
@@ -717,6 +755,153 @@ function FCTracker({ isAdmin }) {
               ) : null}
             </div>
 
+            {/* League Phase */}
+            {tournament?.phase === 'league' && tournament.leagueFixtures && (
+              <div style={s.leagueContainer}>
+                <h3 style={s.sectionTitle}>LEAGUE STAGE</h3>
+                <div style={s.leagueCard}>
+                  <table style={s.groupTable}>
+                    <thead><tr><th style={s.gth}>#</th><th style={{...s.gth, textAlign: 'left'}}>Player</th><th style={s.gth}>P</th><th style={s.gth}>W</th><th style={s.gth}>D</th><th style={s.gth}>L</th><th style={s.gth}>GD</th><th style={s.gth}>Pts</th></tr></thead>
+                    <tbody>
+                      {calculateStandings(true).filter(st => tournament.players.includes(st.id)).map((st, i) => (
+                        <tr key={st.id} style={i < 2 ? s.qualifyRow : {}}>
+                          <td style={s.gtd}>{i + 1}</td>
+                          <td style={{...s.gtd, textAlign: 'left'}}>{st.name} {i < 2 && <span style={s.qualifyBadge}>FINAL</span>}</td>
+                          <td style={s.gtd}>{st.played}</td><td style={s.gtd}>{st.won}</td>
+                          <td style={s.gtd}>{st.drawn}</td><td style={s.gtd}>{st.lost}</td>
+                          <td style={s.gtd}>{st.gd}</td><td style={s.gtdPts}>{st.points}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div style={s.fixturesTitle}>Fixtures (Home & Away)</div>
+                  <div style={s.fixtures}>
+                    {(() => {
+                      const fixtures = tournament.leagueFixtures || [];
+                      const firstUnplayedIdx = fixtures.findIndex(fix => 
+                        !matches.find(m => m.tournamentId === tournament.id && m.player1 === fix.home && m.player2 === fix.away)
+                      );
+                      return fixtures.map((fix, fi) => {
+                        const played = matches.find(m => m.tournamentId === tournament.id && 
+                          m.player1 === fix.home && m.player2 === fix.away);
+                        const isNext = fi === firstUnplayedIdx;
+                        return (
+                          <div key={fi} style={{...s.fixture, ...(isNext ? s.fixtureNext : {}), ...(played ? s.fixturePlayed : {})}}>
+                            <span style={{...s.fixLeg, ...(isNext ? s.fixLegNext : {})}}>{isNext ? 'NEXT' : `L${fix.leg || 1}`}</span>
+                            <span style={s.fixPlayer}>{getPlayerName(fix.home)}</span>
+                            {played ? (
+                              <span style={s.fixScore}>{played.score1} - {played.score2}</span>
+                            ) : (
+                              <span style={s.fixVs}>vs</span>
+                            )}
+                            <span style={s.fixPlayer}>{getPlayerName(fix.away)}</span>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+                {/* Advance to Final button */}
+                {(() => {
+                  const fixtures = tournament.leagueFixtures || [];
+                  const playedCount = fixtures.filter(fix => 
+                    matches.find(m => m.tournamentId === tournament.id && m.player1 === fix.home && m.player2 === fix.away)
+                  ).length;
+                  const allPlayed = playedCount === fixtures.length && fixtures.length > 0;
+                  
+                  return (
+                    <div style={s.advanceSection}>
+                      <p style={s.advanceInfo}>{playedCount}/{fixtures.length} league fixtures played</p>
+                      {isAdmin && (
+                        <button 
+                          onClick={() => {
+                            if (!confirm('Advance top 2 to the final?')) return;
+                            const leagueStandings = calculateStandings(true).filter(st => tournament.players.includes(st.id));
+                            const finalists = leagueStandings.slice(0, 2).map(st => st.id);
+                            
+                            const updatedTournament = {
+                              ...tournament,
+                              phase: 'final',
+                              finalists: finalists,
+                              finalResult: null
+                            };
+                            saveToDb('tournament', updatedTournament, setTournament);
+                          }}
+                          style={{...s.btnPri, ...(allPlayed ? {} : { opacity: 0.5 })}}
+                          disabled={!allPlayed}
+                        >
+                          Advance to Final
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* Final Phase (from League) */}
+            {tournament?.phase === 'final' && tournament.finalists && (
+              <div style={s.finalContainer}>
+                <h3 style={s.sectionTitle}>THE FINAL</h3>
+                <div style={s.finalMatch}>
+                  <div style={{...s.finalPlayer, ...(tournament.finalResult?.winner === tournament.finalists[0] ? s.finalWinner : {})}}>
+                    <span style={s.finalName}>{getPlayerName(tournament.finalists[0])}</span>
+                    {tournament.teamSelections?.[tournament.finalists[0]] && <span style={s.finalTeam}>{tournament.teamSelections[tournament.finalists[0]]}</span>}
+                  </div>
+                  <div style={s.finalVsBox}>
+                    {tournament.finalResult?.leg1 && tournament.finalResult?.leg2 ? (
+                      <div style={s.finalResultBox}>
+                        <div style={s.finalLegScores}>
+                          <span style={s.finalLegScore}>Leg 1: {tournament.finalResult.leg1.p1Goals}-{tournament.finalResult.leg1.p2Goals}</span>
+                          <span style={s.finalLegScore}>Leg 2: {tournament.finalResult.leg2.p1Goals}-{tournament.finalResult.leg2.p2Goals}</span>
+                        </div>
+                        <div style={s.finalAgg}>AGG: {tournament.finalResult.aggregate}</div>
+                      </div>
+                    ) : (
+                      <div style={s.finalLegButtons}>
+                        <button 
+                          onClick={() => setShowKnockoutMatch({ 
+                            round: 'final', matchIdx: 0, 
+                            p1: tournament.finalists[0], p2: tournament.finalists[1], 
+                            leg: 1, isFinal: true 
+                          })} 
+                          style={{...s.legBtn, ...(tournament.finalResult?.leg1 ? s.legBtnDone : {})}}
+                          disabled={!!tournament.finalResult?.leg1}
+                        >
+                          {tournament.finalResult?.leg1 ? `L1: ${tournament.finalResult.leg1.p1Goals}-${tournament.finalResult.leg1.p2Goals}` : 'Leg 1'}
+                        </button>
+                        <button 
+                          onClick={() => setShowKnockoutMatch({ 
+                            round: 'final', matchIdx: 0, 
+                            p1: tournament.finalists[1], p2: tournament.finalists[0], 
+                            leg: 2, originalP1: tournament.finalists[0], originalP2: tournament.finalists[1], 
+                            isFinal: true 
+                          })} 
+                          style={{...s.legBtn, ...(tournament.finalResult?.leg2 ? s.legBtnDone : {}), ...(!tournament.finalResult?.leg1 ? s.legBtnDisabled : {})}}
+                          disabled={!tournament.finalResult?.leg1 || !!tournament.finalResult?.leg2}
+                        >
+                          {tournament.finalResult?.leg2 ? `L2: ${tournament.finalResult.leg2.p1Goals}-${tournament.finalResult.leg2.p2Goals}` : 'Leg 2'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{...s.finalPlayer, ...(tournament.finalResult?.winner === tournament.finalists[1] ? s.finalWinner : {})}}>
+                    <span style={s.finalName}>{getPlayerName(tournament.finalists[1])}</span>
+                    {tournament.teamSelections?.[tournament.finalists[1]] && <span style={s.finalTeam}>{tournament.teamSelections[tournament.finalists[1]]}</span>}
+                  </div>
+                </div>
+                {tournament.finalResult?.winner && (
+                  <div style={s.championBox}>
+                    <div style={s.championLabel}>CHAMPION</div>
+                    <div style={s.championName}>{getPlayerName(tournament.finalResult.winner)}</div>
+                    {tournament.teamSelections?.[tournament.finalResult.winner] && (
+                      <div style={s.championTeam}>{tournament.teamSelections[tournament.finalResult.winner]}</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {tournament?.phase === 'groups' && tournament.groups && (
               <div style={s.groupsContainer}>
                 <h3 style={s.sectionTitle}>GROUP STAGE</h3>
@@ -926,7 +1111,7 @@ function FCTracker({ isAdmin }) {
         <div style={s.modalBtns}><button onClick={() => setShowAddMatch(false)} style={s.btnSec}>Cancel</button><button onClick={() => addMatch(matchData.player1, matchData.player2, matchData.score1, matchData.score2)} style={s.btnAcc}>Log</button></div>
       </Modal>}
 
-      {showKnockoutMatch && <Modal onClose={() => setShowKnockoutMatch(null)} title={`KNOCKOUT MATCH - LEG ${showKnockoutMatch.leg}`}>
+      {showKnockoutMatch && <Modal onClose={() => setShowKnockoutMatch(null)} title={`${showKnockoutMatch.isFinal ? 'FINAL' : 'KNOCKOUT'} - LEG ${showKnockoutMatch.leg}`}>
         <p style={s.legInfo}>{showKnockoutMatch.leg === 1 ? `${getPlayerName(showKnockoutMatch.p1)} hosts` : `${getPlayerName(showKnockoutMatch.p1)} hosts (return leg)`}</p>
         <div style={s.knockoutMatchup}>
           <span style={s.knockoutPlayer}>{getPlayerName(showKnockoutMatch.p1)}</span>
@@ -958,11 +1143,11 @@ function FCTracker({ isAdmin }) {
         ) : (
           <>
             <div style={s.typeOptions}>
-              <button onClick={() => setTournamentType('knockout')} style={{...s.typeBtn, ...(tournamentType === 'knockout' ? s.typeSel : {})}}>
-                <span style={s.typeTitle}>Knockout</span><span style={s.typeDesc}>Single elimination bracket</span>
+              <button onClick={() => setTournamentType('league')} style={{...s.typeBtn, ...(tournamentType === 'league' ? s.typeSel : {})}}>
+                <span style={s.typeTitle}>League + Final</span><span style={s.typeDesc}>Everyone vs everyone, top 2 to final</span>
               </button>
               <button onClick={() => setTournamentType('groups')} style={{...s.typeBtn, ...(tournamentType === 'groups' ? s.typeSel : {})}}>
-                <span style={s.typeTitle}>Groups + Knockout</span><span style={s.typeDesc}>Group stage then elimination</span>
+                <span style={s.typeTitle}>Groups + KO</span><span style={s.typeDesc}>Group stage, then knockout bracket</span>
               </button>
             </div>
             {tournamentType === 'groups' && (
@@ -1215,6 +1400,21 @@ const s = {
   scoreWin: { color: '#4ade80' },
   sectionTitle: { fontSize: '0.75rem', fontWeight: '700', color: '#888', letterSpacing: '0.1em', marginBottom: '1rem' },
   groupsContainer: { marginTop: '0.5rem' },
+  leagueContainer: { marginTop: '0.5rem' },
+  leagueCard: { background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', padding: '1rem' },
+  qualifyBadge: { fontSize: '0.45rem', background: 'rgba(74,222,128,0.2)', color: '#4ade80', padding: '0.15rem 0.35rem', borderRadius: '3px', marginLeft: '0.5rem', fontWeight: '700' },
+  finalContainer: { marginTop: '0.5rem' },
+  finalMatch: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem', padding: '1.5rem', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', flexWrap: 'wrap' },
+  finalPlayer: { flex: '1', minWidth: '120px', maxWidth: '200px', padding: '1rem', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', textAlign: 'center' },
+  finalWinner: { background: 'linear-gradient(145deg, rgba(74,222,128,0.15), rgba(74,222,128,0.05))', border: '1px solid rgba(74,222,128,0.3)' },
+  finalName: { fontSize: '1rem', fontWeight: '700', color: '#fff', display: 'block', marginBottom: '0.25rem' },
+  finalTeam: { fontSize: '0.7rem', color: '#888' },
+  finalVsBox: { padding: '1rem', minWidth: '140px' },
+  finalResultBox: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' },
+  finalLegScores: { display: 'flex', flexDirection: 'column', gap: '0.3rem' },
+  finalLegScore: { fontSize: '0.7rem', color: '#888', background: 'rgba(255,255,255,0.05)', padding: '0.3rem 0.6rem', borderRadius: '4px' },
+  finalAgg: { fontSize: '1rem', fontWeight: '700', color: '#4ade80' },
+  finalLegButtons: { display: 'flex', flexDirection: 'column', gap: '0.5rem' },
   groupsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' },
   groupCard: { background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', padding: '1rem' },
   groupTitle: { fontSize: '0.75rem', fontWeight: '700', color: '#a5b4fc', marginBottom: '0.75rem' },
