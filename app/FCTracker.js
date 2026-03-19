@@ -677,22 +677,29 @@ function FCTracker() {
                         </table>
                         <div style={s.fixturesTitle}>Fixtures (Home & Away)</div>
                         <div style={s.fixtures}>
-                          {tournament.groupFixtures?.[gi]?.map((fix, fi) => {
-                            const played = matches.find(m => m.tournamentId === tournament.id && 
-                              m.player1 === fix.home && m.player2 === fix.away);
-                            return (
-                              <div key={fi} style={s.fixture}>
-                                <span style={s.fixLeg}>L{fix.leg || 1}</span>
-                                <span style={s.fixPlayer}>{getPlayerName(fix.home)}</span>
-                                {played ? (
-                                  <span style={s.fixScore}>{played.score1} - {played.score2}</span>
-                                ) : (
-                                  <span style={s.fixVs}>vs</span>
-                                )}
-                                <span style={s.fixPlayer}>{getPlayerName(fix.away)}</span>
-                              </div>
+                          {(() => {
+                            const fixtures = tournament.groupFixtures?.[gi] || [];
+                            const firstUnplayedIdx = fixtures.findIndex(fix => 
+                              !matches.find(m => m.tournamentId === tournament.id && m.player1 === fix.home && m.player2 === fix.away)
                             );
-                          })}
+                            return fixtures.map((fix, fi) => {
+                              const played = matches.find(m => m.tournamentId === tournament.id && 
+                                m.player1 === fix.home && m.player2 === fix.away);
+                              const isNext = fi === firstUnplayedIdx;
+                              return (
+                                <div key={fi} style={{...s.fixture, ...(isNext ? s.fixtureNext : {}), ...(played ? s.fixturePlayed : {})}}>
+                                  <span style={{...s.fixLeg, ...(isNext ? s.fixLegNext : {})}}>{isNext ? 'NEXT' : `L${fix.leg || 1}`}</span>
+                                  <span style={s.fixPlayer}>{getPlayerName(fix.home)}</span>
+                                  {played ? (
+                                    <span style={s.fixScore}>{played.score1} - {played.score2}</span>
+                                  ) : (
+                                    <span style={s.fixVs}>vs</span>
+                                  )}
+                                  <span style={s.fixPlayer}>{getPlayerName(fix.away)}</span>
+                                </div>
+                              );
+                            });
+                          })()}
                         </div>
                       </div>
                     );
@@ -1034,24 +1041,24 @@ function Modal({ onClose, title, children, wide }) {
 
 // ============ STYLES ============
 const s = {
-  container: { minHeight: '100vh', background: 'linear-gradient(145deg, #080810, #0f0f1a, #0a0a12)', color: '#e5e5e5', fontFamily: "'Archivo', sans-serif" },
+  container: { minHeight: '100vh', background: 'linear-gradient(145deg, #080810, #0f0f1a, #0a0a12)', color: '#e5e5e5', fontFamily: "'Archivo', sans-serif", WebkitTapHighlightColor: 'transparent' },
   loading: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#888' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.5rem', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(10px)', flexWrap: 'wrap', gap: '1rem' },
   logoArea: { display: 'flex', alignItems: 'center', gap: '0.75rem' },
   logo: { width: '44px', height: '44px', background: 'linear-gradient(135deg, #fbbf24, #f59e0b)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '900', fontSize: '1.2rem', color: '#000' },
   title: { fontSize: '1.2rem', fontWeight: '800', margin: 0, background: 'linear-gradient(90deg, #fff, #a5b4fc)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' },
   subtitle: { fontSize: '0.65rem', color: '#666', margin: 0, letterSpacing: '0.1em', textTransform: 'uppercase' },
-  headerBtns: { display: 'flex', gap: '0.5rem' },
-  btnPri: { padding: '0.5rem 1rem', background: 'linear-gradient(135deg, #6366f1, #4f46e5)', border: 'none', borderRadius: '6px', color: '#fff', fontWeight: '600', fontSize: '0.75rem', cursor: 'pointer' },
-  btnAcc: { padding: '0.5rem 1rem', background: 'linear-gradient(135deg, #fbbf24, #f59e0b)', border: 'none', borderRadius: '6px', color: '#000', fontWeight: '700', fontSize: '0.75rem', cursor: 'pointer' },
-  btnSec: { padding: '0.5rem 1rem', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#bbb', fontWeight: '500', fontSize: '0.75rem', cursor: 'pointer' },
-  btnDanger: { padding: '0.4rem 0.8rem', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '6px', color: '#fca5a5', fontSize: '0.7rem', cursor: 'pointer' },
-  btnLogout: { padding: '0.4rem 0.6rem', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#666', fontSize: '0.7rem', cursor: 'pointer', marginLeft: '0.25rem' },
-  btnDelete: { padding: '0.2rem 0.5rem', background: 'transparent', border: 'none', color: '#555', fontSize: '0.8rem', cursor: 'pointer', opacity: 0.5, marginLeft: '0.5rem' },
+  headerBtns: { display: 'flex', gap: '0.5rem', flexWrap: 'wrap' },
+  btnPri: { padding: '0.6rem 1.1rem', background: 'linear-gradient(135deg, #6366f1, #4f46e5)', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: '600', fontSize: '0.8rem', cursor: 'pointer', touchAction: 'manipulation', minHeight: '44px' },
+  btnAcc: { padding: '0.6rem 1.1rem', background: 'linear-gradient(135deg, #fbbf24, #f59e0b)', border: 'none', borderRadius: '8px', color: '#000', fontWeight: '700', fontSize: '0.8rem', cursor: 'pointer', touchAction: 'manipulation', minHeight: '44px' },
+  btnSec: { padding: '0.6rem 1.1rem', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#bbb', fontWeight: '500', fontSize: '0.8rem', cursor: 'pointer', touchAction: 'manipulation', minHeight: '44px' },
+  btnDanger: { padding: '0.5rem 0.9rem', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '6px', color: '#fca5a5', fontSize: '0.75rem', cursor: 'pointer', touchAction: 'manipulation', minHeight: '40px' },
+  btnLogout: { padding: '0.5rem 0.7rem', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#666', fontSize: '0.75rem', cursor: 'pointer', marginLeft: '0.25rem', touchAction: 'manipulation', minHeight: '40px' },
+  btnDelete: { padding: '0.3rem 0.6rem', background: 'transparent', border: 'none', color: '#555', fontSize: '0.9rem', cursor: 'pointer', opacity: 0.5, marginLeft: '0.5rem', touchAction: 'manipulation', minHeight: '36px' },
   matchCardLatest: { border: '1px solid rgba(251,191,36,0.2)', background: 'rgba(251,191,36,0.03)' },
   drawWarning: { textAlign: 'center', color: '#fbbf24', fontSize: '0.7rem', marginBottom: '0.5rem', padding: '0.4rem', background: 'rgba(251,191,36,0.08)', borderRadius: '4px' },
   nav: { display: 'flex', gap: '0.2rem', padding: '0.6rem 1.5rem', borderBottom: '1px solid rgba(255,255,255,0.04)', overflowX: 'auto' },
-  navBtn: { padding: '0.4rem 1rem', background: 'transparent', border: 'none', color: '#666', fontSize: '0.7rem', fontWeight: '600', cursor: 'pointer', borderRadius: '4px', whiteSpace: 'nowrap' },
+  navBtn: { padding: '0.6rem 1rem', background: 'transparent', border: 'none', color: '#666', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', borderRadius: '6px', whiteSpace: 'nowrap', touchAction: 'manipulation', minHeight: '40px' },
   navActive: { background: 'rgba(99,102,241,0.15)', color: '#a5b4fc' },
   main: { padding: '1.25rem 1.5rem', maxWidth: '1200px', margin: '0 auto' },
   card: { background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '1.25rem' },
@@ -1113,9 +1120,12 @@ const s = {
   qualifyRow: { background: 'rgba(74,222,128,0.08)' },
   fixturesTitle: { fontSize: '0.6rem', fontWeight: '600', color: '#666', marginBottom: '0.5rem' },
   fixtures: { display: 'flex', flexDirection: 'column', gap: '0.3rem' },
-  fixture: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.3rem 0.5rem', background: 'rgba(0,0,0,0.2)', borderRadius: '4px', fontSize: '0.65rem' },
+  fixture: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.4rem 0.5rem', background: 'rgba(0,0,0,0.2)', borderRadius: '4px', fontSize: '0.65rem' },
+  fixtureNext: { background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.3)' },
+  fixturePlayed: { opacity: 0.6 },
   fixPlayer: { color: '#ccc', flex: 1 },
-  fixLeg: { color: '#6366f1', fontSize: '0.5rem', fontWeight: '700', minWidth: '20px' },
+  fixLeg: { color: '#6366f1', fontSize: '0.5rem', fontWeight: '700', minWidth: '28px' },
+  fixLegNext: { color: '#fbbf24', fontSize: '0.45rem' },
   fixVs: { color: '#555', padding: '0 0.5rem' },
   fixScore: { color: '#4ade80', fontWeight: '700', padding: '0 0.5rem' },
   bracketContainer: { marginTop: '0.5rem' },
@@ -1133,8 +1143,8 @@ const s = {
   legScores: { display: 'flex', gap: '0.5rem', fontSize: '0.6rem', color: '#888' },
   legScore: { background: 'rgba(255,255,255,0.05)', padding: '0.15rem 0.4rem', borderRadius: '3px' },
   aggScore: { fontSize: '0.75rem', fontWeight: '700', color: '#4ade80' },
-  legButtons: { display: 'flex', flexDirection: 'column', gap: '0.3rem', padding: '0.2rem 0' },
-  legBtn: { padding: '0.3rem 0.6rem', background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: '4px', color: '#a5b4fc', fontSize: '0.65rem', cursor: 'pointer', fontWeight: '600' },
+  legButtons: { display: 'flex', flexDirection: 'column', gap: '0.4rem', padding: '0.3rem 0' },
+  legBtn: { padding: '0.5rem 0.8rem', background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: '6px', color: '#a5b4fc', fontSize: '0.7rem', cursor: 'pointer', fontWeight: '600', touchAction: 'manipulation', minHeight: '40px' },
   legBtnDone: { background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.2)', color: '#4ade80', cursor: 'default' },
   legBtnDisabled: { opacity: 0.4, cursor: 'not-allowed' },
   legInfo: { textAlign: 'center', fontSize: '0.7rem', color: '#fbbf24', marginBottom: '0.5rem', fontWeight: '600' },
@@ -1150,11 +1160,11 @@ const s = {
   modalTitle: { fontSize: '0.9rem', fontWeight: '700', letterSpacing: '0.1em', marginBottom: '1rem', textAlign: 'center' },
   modalDesc: { color: '#777', fontSize: '0.75rem', marginBottom: '0.75rem', textAlign: 'center' },
   modalBtns: { display: 'flex', gap: '0.5rem', marginTop: '1rem', justifyContent: 'flex-end' },
-  input: { width: '100%', padding: '0.6rem', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', fontSize: '0.8rem', marginBottom: '0.5rem', boxSizing: 'border-box' },
-  select: { width: '100%', padding: '0.6rem', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', fontSize: '0.8rem', marginBottom: '0.5rem', boxSizing: 'border-box' },
+  input: { width: '100%', padding: '0.75rem', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff', fontSize: '16px', marginBottom: '0.6rem', boxSizing: 'border-box', minHeight: '48px' },
+  select: { width: '100%', padding: '0.75rem', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff', fontSize: '16px', marginBottom: '0.6rem', boxSizing: 'border-box', minHeight: '48px' },
   selectSmall: { padding: '0.4rem', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: '#fff', fontSize: '0.75rem' },
   scoreRow: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.6rem', margin: '0.6rem 0' },
-  scoreInput: { width: '55px', padding: '0.7rem', background: 'rgba(0,0,0,0.4)', border: '2px solid rgba(251,191,36,0.25)', borderRadius: '6px', color: '#fff', fontSize: '1.2rem', fontWeight: '800', textAlign: 'center' },
+  scoreInput: { width: '60px', padding: '0.8rem', background: 'rgba(0,0,0,0.4)', border: '2px solid rgba(251,191,36,0.25)', borderRadius: '8px', color: '#fff', fontSize: '1.3rem', fontWeight: '800', textAlign: 'center', minHeight: '50px' },
   vs: { fontWeight: '800', color: '#444' },
   knockoutMatchup: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem', marginBottom: '0.5rem' },
   knockoutPlayer: { fontSize: '1rem', fontWeight: '700', color: '#fff' },
