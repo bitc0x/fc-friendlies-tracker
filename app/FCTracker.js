@@ -109,8 +109,8 @@ function FCTracker() {
 
   const save = (key, data, setter) => { setter(data); storage.set(key, data); };
 
-  // ELO
-  const getAllEloRatings = () => {
+  // ELO (memoized for performance)
+  const eloRatings = useMemo(() => {
     const ratings = {};
     players.forEach(p => { ratings[p.id] = ELO_START; });
     [...matches].sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(m => {
@@ -122,9 +122,7 @@ function FCTracker() {
       ratings[m.player2] = Math.round(p2Elo + ELO_K * ((1 - outcome1) - (1 - expected1)));
     });
     return ratings;
-  };
-
-  const eloRatings = getAllEloRatings();
+  }, [players, matches]);
 
   // Player CRUD
   const addPlayer = () => {
@@ -223,8 +221,43 @@ function FCTracker() {
   const deleteLastMatch = () => {
     if (matches.length === 0) return;
     if (!confirm('Delete the last match?')) return;
+    
+    const lastMatch = matches[matches.length - 1];
     const newMatches = matches.slice(0, -1);
     save('fct-matches', newMatches, setMatches);
+    
+    // If it was a knockout match, also update tournament results
+    if (tournament && lastMatch.knockoutRound !== null && lastMatch.knockoutLeg !== null) {
+      const updatedTournament = JSON.parse(JSON.stringify(tournament));
+      const matchResult = updatedTournament.knockoutResults?.[lastMatch.knockoutRound]?.[lastMatch.knockoutMatchIdx];
+      
+      if (matchResult) {
+        // Remove the leg result
+        if (lastMatch.knockoutLeg === 1) {
+          delete matchResult.leg1;
+        } else if (lastMatch.knockoutLeg === 2) {
+          delete matchResult.leg2;
+          // Also remove winner and aggregate if they were set
+          delete matchResult.winner;
+          delete matchResult.aggregate;
+          
+          // Remove advancement from next round
+          const nextRound = lastMatch.knockoutRound + 1;
+          const nextMatchIdx = Math.floor(lastMatch.knockoutMatchIdx / 2);
+          const isFirstOfPair = lastMatch.knockoutMatchIdx % 2 === 0;
+          if (updatedTournament.knockoutBracket[nextRound]) {
+            updatedTournament.knockoutBracket[nextRound][nextMatchIdx * 2 + (isFirstOfPair ? 0 : 1)] = null;
+          }
+        }
+        
+        // Clean up empty objects
+        if (Object.keys(matchResult).length === 0) {
+          delete updatedTournament.knockoutResults[lastMatch.knockoutRound][lastMatch.knockoutMatchIdx];
+        }
+        
+        save('fct-tournament', updatedTournament, setTournament);
+      }
+    }
   };
 
   // Delete player
@@ -725,6 +758,23 @@ function FCTracker() {
                     );
                   })}
                 </div>
+                {/* Champion display */}
+                {(() => {
+                  const finalRound = Object.entries(tournament.knockoutBracket).find(([_, players]) => players.length === 2);
+                  if (!finalRound) return null;
+                  const [roundStr] = finalRound;
+                  const finalResult = tournament.knockoutResults?.[roundStr]?.[0];
+                  if (!finalResult?.winner) return null;
+                  return (
+                    <div style={s.championBox}>
+                      <div style={s.championLabel}>CHAMPION</div>
+                      <div style={s.championName}>{getPlayerName(finalResult.winner)}</div>
+                      {tournament.teamSelections?.[finalResult.winner] && (
+                        <div style={s.championTeam}>{tournament.teamSelections[finalResult.winner]}</div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
@@ -1039,6 +1089,10 @@ const s = {
   legBtnDone: { background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.2)', color: '#4ade80', cursor: 'default' },
   legBtnDisabled: { opacity: 0.4, cursor: 'not-allowed' },
   legInfo: { textAlign: 'center', fontSize: '0.7rem', color: '#fbbf24', marginBottom: '0.5rem', fontWeight: '600' },
+  championBox: { marginTop: '1.5rem', padding: '1.5rem', background: 'linear-gradient(145deg, rgba(251,191,36,0.1), rgba(251,191,36,0.02))', border: '2px solid rgba(251,191,36,0.3)', borderRadius: '12px', textAlign: 'center' },
+  championLabel: { fontSize: '0.7rem', fontWeight: '700', color: '#fbbf24', letterSpacing: '0.2em', marginBottom: '0.5rem' },
+  championName: { fontSize: '1.5rem', fontWeight: '800', color: '#fff', textTransform: 'uppercase' },
+  championTeam: { fontSize: '0.8rem', color: '#888', marginTop: '0.25rem' },
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' },
   modal: { background: 'linear-gradient(145deg, #18182a, #12121a)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px', padding: '1.5rem', maxWidth: '400px', width: '100%', maxHeight: '90vh', overflowY: 'auto' },
   modalWide: { maxWidth: '550px' },
