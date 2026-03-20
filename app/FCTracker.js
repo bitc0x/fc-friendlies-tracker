@@ -1467,8 +1467,9 @@ function FCTracker({ isAdmin }) {
       })()}
 
       {showPool && tournament && (() => {
-        const pool = { buyIn: 5, paidIn: [], ...tournament.pool };
-        const paidIn = pool.paidIn || [];
+        const rawPool = tournament.pool || {};
+        const pool = { buyIn: rawPool.buyIn ?? 5, paidIn: Array.isArray(rawPool.paidIn) ? rawPool.paidIn : [] };
+        const paidIn = pool.paidIn;
         const participants = tournament.players || [];
         const totalPot = paidIn.length * pool.buyIn;
         const winner = tournament.finalResult?.winner || tournament.knockoutResults?.final?.winner;
