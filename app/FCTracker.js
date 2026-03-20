@@ -95,6 +95,7 @@ function FCTracker({ isAdmin }) {
   const [showKnockoutMatch, setShowKnockoutMatch] = useState(null);
   const [showEloEditor, setShowEloEditor] = useState(null);
   const [showPlayerStats, setShowPlayerStats] = useState(null);
+  const [showPool, setShowPool] = useState(false);
   
   // Form states
   const [newPlayerName, setNewPlayerName] = useState('');
@@ -850,11 +851,14 @@ function FCTracker({ isAdmin }) {
           <div style={s.card}>
             <div style={s.cardHead}>
               <h2 style={s.cardTitle}>TOURNAMENT</h2>
-              {!tournament ? (
-                <button onClick={() => setShowTournamentSetup(true)} style={s.btnPri}>Create</button>
-              ) : isAdmin ? (
-                <button onClick={() => { if(confirm('End this tournament? This cannot be undone.')) saveToDb('tournament', null, setTournament); }} style={s.btnDanger}>End</button>
-              ) : null}
+              <div style={s.cardHeadBtns}>
+                {tournament && <button onClick={() => setShowPool(true)} style={s.btnPool}>Pool</button>}
+                {!tournament ? (
+                  <button onClick={() => setShowTournamentSetup(true)} style={s.btnPri}>Create</button>
+                ) : isAdmin ? (
+                  <button onClick={() => { if(confirm('End this tournament? This cannot be undone.')) saveToDb('tournament', null, setTournament); }} style={s.btnDanger}>End</button>
+                ) : null}
+              </div>
             </div>
 
             {/* League Phase */}
@@ -1462,6 +1466,82 @@ function FCTracker({ isAdmin }) {
         );
       })()}
 
+      {showPool && tournament && (() => {
+        const pool = tournament.pool || { buyIn: 5, currency: '$', paidIn: [] };
+        const participants = tournament.players || [];
+        const totalPot = pool.paidIn.length * pool.buyIn;
+        const winner = tournament.finalResult?.winner || tournament.knockoutResults?.final?.winner;
+        const allPaid = participants.every(p => pool.paidIn.includes(p));
+        
+        const updatePool = (newPool) => {
+          saveToDb('tournament', { ...tournament, pool: newPool }, setTournament);
+        };
+        
+        const togglePaid = (playerId) => {
+          const newPaidIn = pool.paidIn.includes(playerId) 
+            ? pool.paidIn.filter(id => id !== playerId)
+            : [...pool.paidIn, playerId];
+          updatePool({ ...pool, paidIn: newPaidIn });
+        };
+        
+        return (
+          <Modal onClose={() => setShowPool(false)} title="PRIZE POOL" wide>
+            <div style={s.poolHeader}>
+              <div style={s.poolTotal}>
+                <span style={s.poolCurrency}>{pool.currency}</span>
+                <span style={s.poolAmount}>{totalPot}</span>
+              </div>
+              <div style={s.poolSubtext}>{pool.paidIn.length}/{participants.length} paid</div>
+            </div>
+            
+            {winner && (
+              <div style={s.poolWinner}>
+                <div style={s.poolWinnerLabel}>WINNER TAKES</div>
+                <div style={s.poolWinnerName}>{getPlayerName(winner)}</div>
+                <div style={s.poolWinnerAmount}>{pool.currency}{totalPot}</div>
+              </div>
+            )}
+            
+            <div style={s.poolBuyIn}>
+              <label style={s.poolLabel}>Buy-in per player</label>
+              <div style={s.poolBuyInRow}>
+                <select value={pool.currency} onChange={e => updatePool({...pool, currency: e.target.value})} style={s.poolCurrencySelect}>
+                  <option value="$">$</option>
+                  <option value="EUR">EUR</option>
+                  <option value="COP">COP</option>
+                </select>
+                <input 
+                  type="number" 
+                  value={pool.buyIn} 
+                  onChange={e => updatePool({...pool, buyIn: Math.max(0, parseInt(e.target.value) || 0)})}
+                  style={s.poolInput}
+                  min="0"
+                />
+              </div>
+            </div>
+            
+            <div style={s.poolPlayers}>
+              <div style={s.poolLabel}>Who has paid?</div>
+              {participants.map(pid => {
+                const paid = pool.paidIn.includes(pid);
+                return (
+                  <div key={pid} onClick={() => togglePaid(pid)} style={{...s.poolPlayerRow, ...(paid ? s.poolPlayerPaid : {})}}>
+                    <span style={s.poolPlayerName}>{getPlayerName(pid)}</span>
+                    <span style={{...s.poolCheck, ...(paid ? s.poolCheckPaid : {})}}>{paid ? 'PAID' : '-'}</span>
+                  </div>
+                );
+              })}
+            </div>
+            
+            {!allPaid && <div style={s.poolWarning}>Not everyone has paid yet</div>}
+            
+            <div style={s.modalBtns}>
+              <button onClick={() => setShowPool(false)} style={s.btnPri}>Close</button>
+            </div>
+          </Modal>
+        );
+      })()}
+
       <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}`}</style>
     </div>
   );
@@ -1754,6 +1834,30 @@ const s = {
   statsMatchupName: { display: 'block', color: '#fff', fontWeight: '600', marginBottom: '0.15rem' },
   statsForm: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', marginBottom: '1rem' },
   statsFormLabel: { fontSize: '0.7rem', color: '#888' },
+  // Pool modal styles
+  cardHeadBtns: { display: 'flex', gap: '0.5rem' },
+  btnPool: { padding: '0.4rem 0.75rem', background: 'linear-gradient(135deg, #fbbf24, #f59e0b)', border: 'none', borderRadius: '6px', color: '#000', fontWeight: '700', fontSize: '0.7rem', cursor: 'pointer' },
+  poolHeader: { textAlign: 'center', marginBottom: '1.25rem', padding: '1.5rem', background: 'linear-gradient(135deg, rgba(251,191,36,0.15), rgba(245,158,11,0.08))', borderRadius: '12px', border: '1px solid rgba(251,191,36,0.2)' },
+  poolTotal: { display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: '0.25rem' },
+  poolCurrency: { fontSize: '1.5rem', fontWeight: '700', color: '#fbbf24' },
+  poolAmount: { fontSize: '3rem', fontWeight: '900', color: '#fff' },
+  poolSubtext: { fontSize: '0.75rem', color: '#888', marginTop: '0.5rem' },
+  poolWinner: { textAlign: 'center', padding: '1rem', background: 'rgba(74,222,128,0.1)', borderRadius: '10px', border: '1px solid rgba(74,222,128,0.2)', marginBottom: '1rem' },
+  poolWinnerLabel: { fontSize: '0.6rem', color: '#4ade80', letterSpacing: '0.1em', marginBottom: '0.25rem' },
+  poolWinnerName: { fontSize: '1.25rem', fontWeight: '800', color: '#fff' },
+  poolWinnerAmount: { fontSize: '1.5rem', fontWeight: '900', color: '#4ade80', marginTop: '0.25rem' },
+  poolBuyIn: { marginBottom: '1rem' },
+  poolLabel: { display: 'block', fontSize: '0.65rem', color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' },
+  poolBuyInRow: { display: 'flex', gap: '0.5rem' },
+  poolCurrencySelect: { padding: '0.6rem', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', fontSize: '0.85rem', width: '70px' },
+  poolInput: { flex: 1, padding: '0.6rem', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', fontSize: '1rem', fontWeight: '700' },
+  poolPlayers: { marginBottom: '1rem' },
+  poolPlayerRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', marginBottom: '0.4rem', cursor: 'pointer', border: '1px solid transparent', transition: 'all 0.15s' },
+  poolPlayerPaid: { background: 'rgba(74,222,128,0.08)', borderColor: 'rgba(74,222,128,0.2)' },
+  poolPlayerName: { fontWeight: '600', color: '#fff', fontSize: '0.85rem' },
+  poolCheck: { fontSize: '0.65rem', color: '#555', fontWeight: '700' },
+  poolCheckPaid: { color: '#4ade80' },
+  poolWarning: { textAlign: 'center', padding: '0.6rem', background: 'rgba(251,191,36,0.1)', borderRadius: '6px', color: '#fbbf24', fontSize: '0.75rem', marginBottom: '1rem' },
 };
 
 // ============ PASSWORD GATE ============
