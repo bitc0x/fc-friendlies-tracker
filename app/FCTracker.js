@@ -1468,7 +1468,11 @@ function FCTracker({ isAdmin }) {
 
       {showPool && tournament && (() => {
         const rawPool = tournament.pool || {};
-        const pool = { buyIn: rawPool.buyIn ?? 5, paidIn: Array.isArray(rawPool.paidIn) ? rawPool.paidIn : [] };
+        const pool = { 
+          buyIn: rawPool.buyIn ?? 5, 
+          paidIn: Array.isArray(rawPool.paidIn) ? rawPool.paidIn : [],
+          venmo: rawPool.venmo || ''
+        };
         const paidIn = pool.paidIn;
         const participants = tournament.players || [];
         const totalPot = paidIn.length * pool.buyIn;
@@ -1485,6 +1489,9 @@ function FCTracker({ isAdmin }) {
             : [...paidIn, playerId];
           updatePool({ ...pool, paidIn: newPaidIn });
         };
+        
+        const venmoLink = pool.venmo ? 
+          `https://venmo.com/${pool.venmo.replace('@', '')}?txn=pay&amount=${pool.buyIn}&note=${encodeURIComponent('FC Tournament Buy-in')}` : null;
         
         return (
           <Modal onClose={() => setShowPool(false)} title="PRIZE POOL" wide>
@@ -1516,6 +1523,25 @@ function FCTracker({ isAdmin }) {
                   min="0"
                 />
               </div>
+            </div>
+            
+            <div style={s.poolVenmo}>
+              <label style={s.poolLabel}>Venmo (who collects)</label>
+              <div style={s.poolVenmoRow}>
+                <span style={s.poolVenmoAt}>@</span>
+                <input 
+                  type="text" 
+                  value={pool.venmo} 
+                  onChange={e => updatePool({...pool, venmo: e.target.value.replace('@', '')})}
+                  placeholder="username"
+                  style={s.poolVenmoInput}
+                />
+              </div>
+              {venmoLink && (
+                <a href={venmoLink} target="_blank" rel="noopener noreferrer" style={s.venmoBtn}>
+                  Pay ${pool.buyIn} on Venmo
+                </a>
+              )}
             </div>
             
             <div style={s.poolPlayers}>
@@ -1856,6 +1882,11 @@ const s = {
   poolCheck: { fontSize: '0.65rem', color: '#555', fontWeight: '700' },
   poolCheckPaid: { color: '#4ade80' },
   poolWarning: { textAlign: 'center', padding: '0.6rem', background: 'rgba(251,191,36,0.1)', borderRadius: '6px', color: '#fbbf24', fontSize: '0.75rem', marginBottom: '1rem' },
+  poolVenmo: { marginBottom: '1rem' },
+  poolVenmoRow: { display: 'flex', alignItems: 'center', background: 'rgba(0,0,0,0.3)', borderRadius: '6px', border: '1px solid rgba(0,143,209,0.3)', marginBottom: '0.5rem' },
+  poolVenmoAt: { padding: '0.6rem', color: '#008fd1', fontWeight: '700', fontSize: '0.9rem' },
+  poolVenmoInput: { flex: 1, padding: '0.6rem', background: 'transparent', border: 'none', color: '#fff', fontSize: '0.9rem', outline: 'none' },
+  venmoBtn: { display: 'block', textAlign: 'center', padding: '0.75rem', background: 'linear-gradient(135deg, #008fd1, #0074b3)', borderRadius: '8px', color: '#fff', fontWeight: '700', fontSize: '0.8rem', textDecoration: 'none' },
 };
 
 // ============ PASSWORD GATE ============
