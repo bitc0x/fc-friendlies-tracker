@@ -1467,20 +1467,21 @@ function FCTracker({ isAdmin }) {
       })()}
 
       {showPool && tournament && (() => {
-        const pool = tournament.pool || { buyIn: 5, paidIn: [] };
+        const pool = { buyIn: 5, paidIn: [], ...tournament.pool };
+        const paidIn = pool.paidIn || [];
         const participants = tournament.players || [];
-        const totalPot = pool.paidIn.length * pool.buyIn;
+        const totalPot = paidIn.length * pool.buyIn;
         const winner = tournament.finalResult?.winner || tournament.knockoutResults?.final?.winner;
-        const allPaid = participants.every(p => pool.paidIn.includes(p));
+        const allPaid = participants.length > 0 && participants.every(p => paidIn.includes(p));
         
         const updatePool = (newPool) => {
           saveToDb('tournament', { ...tournament, pool: newPool }, setTournament);
         };
         
         const togglePaid = (playerId) => {
-          const newPaidIn = pool.paidIn.includes(playerId) 
-            ? pool.paidIn.filter(id => id !== playerId)
-            : [...pool.paidIn, playerId];
+          const newPaidIn = paidIn.includes(playerId) 
+            ? paidIn.filter(id => id !== playerId)
+            : [...paidIn, playerId];
           updatePool({ ...pool, paidIn: newPaidIn });
         };
         
@@ -1491,7 +1492,7 @@ function FCTracker({ isAdmin }) {
                 <span style={s.poolCurrency}>$</span>
                 <span style={s.poolAmount}>{totalPot}</span>
               </div>
-              <div style={s.poolSubtext}>{pool.paidIn.length}/{participants.length} paid</div>
+              <div style={s.poolSubtext}>{paidIn.length}/{participants.length} paid</div>
             </div>
             
             {winner && (
@@ -1519,7 +1520,7 @@ function FCTracker({ isAdmin }) {
             <div style={s.poolPlayers}>
               <div style={s.poolLabel}>Who has paid?</div>
               {participants.map(pid => {
-                const paid = pool.paidIn.includes(pid);
+                const paid = paidIn.includes(pid);
                 return (
                   <div key={pid} onClick={() => togglePaid(pid)} style={{...s.poolPlayerRow, ...(paid ? s.poolPlayerPaid : {})}}>
                     <span style={s.poolPlayerName}>{getPlayerName(pid)}</span>
