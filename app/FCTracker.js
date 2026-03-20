@@ -1467,7 +1467,7 @@ function FCTracker({ isAdmin }) {
       })()}
 
       {showPool && tournament && (() => {
-        const pool = tournament.pool || { buyIn: 5, currency: '$', paidIn: [] };
+        const pool = tournament.pool || { buyIn: 5, paidIn: [] };
         const participants = tournament.players || [];
         const totalPot = pool.paidIn.length * pool.buyIn;
         const winner = tournament.finalResult?.winner || tournament.knockoutResults?.final?.winner;
@@ -1488,7 +1488,7 @@ function FCTracker({ isAdmin }) {
           <Modal onClose={() => setShowPool(false)} title="PRIZE POOL" wide>
             <div style={s.poolHeader}>
               <div style={s.poolTotal}>
-                <span style={s.poolCurrency}>{pool.currency}</span>
+                <span style={s.poolCurrency}>$</span>
                 <span style={s.poolAmount}>{totalPot}</span>
               </div>
               <div style={s.poolSubtext}>{pool.paidIn.length}/{participants.length} paid</div>
@@ -1498,18 +1498,14 @@ function FCTracker({ isAdmin }) {
               <div style={s.poolWinner}>
                 <div style={s.poolWinnerLabel}>WINNER TAKES</div>
                 <div style={s.poolWinnerName}>{getPlayerName(winner)}</div>
-                <div style={s.poolWinnerAmount}>{pool.currency}{totalPot}</div>
+                <div style={s.poolWinnerAmount}>${totalPot}</div>
               </div>
             )}
             
             <div style={s.poolBuyIn}>
               <label style={s.poolLabel}>Buy-in per player</label>
               <div style={s.poolBuyInRow}>
-                <select value={pool.currency} onChange={e => updatePool({...pool, currency: e.target.value})} style={s.poolCurrencySelect}>
-                  <option value="$">$</option>
-                  <option value="EUR">EUR</option>
-                  <option value="COP">COP</option>
-                </select>
+                <span style={s.poolDollar}>$</span>
                 <input 
                   type="number" 
                   value={pool.buyIn} 
@@ -1848,8 +1844,8 @@ const s = {
   poolWinnerAmount: { fontSize: '1.5rem', fontWeight: '900', color: '#4ade80', marginTop: '0.25rem' },
   poolBuyIn: { marginBottom: '1rem' },
   poolLabel: { display: 'block', fontSize: '0.65rem', color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' },
-  poolBuyInRow: { display: 'flex', gap: '0.5rem' },
-  poolCurrencySelect: { padding: '0.6rem', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', fontSize: '0.85rem', width: '70px' },
+  poolBuyInRow: { display: 'flex', gap: '0.5rem', alignItems: 'center' },
+  poolDollar: { fontSize: '1.25rem', fontWeight: '700', color: '#fbbf24' },
   poolInput: { flex: 1, padding: '0.6rem', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff', fontSize: '1rem', fontWeight: '700' },
   poolPlayers: { marginBottom: '1rem' },
   poolPlayerRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', marginBottom: '0.4rem', cursor: 'pointer', border: '1px solid transparent', transition: 'all 0.15s' },
